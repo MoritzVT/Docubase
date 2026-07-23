@@ -1,0 +1,57 @@
+{
+  "name": "docubase",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "tauri": "tauri",
+    "media-worker:build": "node scripts/build-media-worker.mjs",
+    "tauri:dev": "npm run media-worker:build && tauri dev",
+    "tauri:build": "npm run media-worker:build && tauri build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\"",
+    "check": "npm run test && npm run build && npm run test:rust && npm run test:swift",
+    "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
+    "test:swift": "swift test --package-path native/MediaWorker",
+    "firebase:login": "firebase login",
+    "firebase:use": "firebase use docubase-455a4",
+    "firebase:deploy": "firebase deploy --project docubase-455a4 --only firestore,functions",
+    "firebase:emulators": "firebase emulators:start"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "2.11.1",
+    "@tauri-apps/plugin-dialog": "2.7.2",
+    "@tauri-apps/plugin-opener": "2.5.4",
+    "@tauri-apps/plugin-shell": "2.3.5",
+    "clsx": "2.1.1",
+    "date-fns": "4.4.0",
+    "firebase": "12.16.0",
+    "lucide-react": "1.26.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.1",
+    "@tauri-apps/cli": "2.11.4",
+    "@testing-library/jest-dom": "7.0.0",
+    "@testing-library/react": "16.3.2",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@types/node": "26.1.1",
+    "@vitejs/plugin-react": "6.0.4",
+    "esbuild": "0.28.1",
+    "firebase-tools": "15.24.0",
+    "jsdom": "29.1.1",
+    "typescript": "7.0.2",
+    "vite": "8.1.5",
+    "vitest": "4.1.10"
+  }
+}
