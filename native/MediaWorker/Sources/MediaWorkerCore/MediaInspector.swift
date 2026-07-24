@@ -41,6 +41,16 @@ public struct MediaInspection: Codable, Sendable {
     }
 }
 
+public struct AudioExtraction: Codable, Sendable {
+    public let durationMs: Int64
+    public let fileSizeBytes: Int64
+
+    public init(durationMs: Int64, fileSizeBytes: Int64) {
+        self.durationMs = durationMs
+        self.fileSizeBytes = fileSizeBytes
+    }
+}
+
 public struct ResolvedFrameRate: Equatable, Sendable {
     public let numerator: Int
     public let denominator: Int
@@ -77,7 +87,9 @@ public enum FrameRateResolver {
 public enum MediaWorkerError: LocalizedError {
     case invalidArguments(String)
     case noVideoTrack
+    case noAudioTrack
     case cannotCreateThumbnail
+    case cannotCreateAudio
     case cannotReadTimecode
 
     public var errorDescription: String? {
@@ -86,8 +98,12 @@ public enum MediaWorkerError: LocalizedError {
             return message
         case .noVideoTrack:
             return "The file does not contain a readable video track."
+        case .noAudioTrack:
+            return "The file does not contain a readable audio track."
         case .cannotCreateThumbnail:
             return "A JPEG poster frame could not be created."
+        case .cannotCreateAudio:
+            return "The requested audio chunk could not be created."
         case .cannotReadTimecode:
             return "The embedded timecode track could not be read."
         }
@@ -158,6 +174,121 @@ public actor MediaInspector {
             videoCodec: codecName(from: videoDescriptions.first) ?? "unknown",
             audioCodec: audioCodec,
             hasAudio: !audioTracks.isEmpty
+        )
+    }
+
+    public func extractAudio(
+        mediaURL: URL,
+        outputURL: URL,
+        startMs: Int64,
+        durationMs: Int64
+    ) async throws -> AudioExtraction {
+        let asset = AVURLAsset(url: mediaURL)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        guard !audioTracks.isEmpty else {
+            throw MediaWorkerError.noAudioTrack
+        }
+
+        let assetDuration = try await asset.load(.duration)
+        let assetDurationSeconds = max(0, CMTimeGetSeconds(assetDuration))
+        let startSeconds = Double(startMs) / 1_000
+        guard startSeconds < assetDurationSeconds else {
+            throw MediaWorkerError.cannotCreateAudio
+        }
+        let requestedDurationSeconds = Double(durationMs) / 1_000
+        let actualDurationSeconds = min(
+            requestedDurationSeconds,
+            assetDurationSeconds - startSeconds
+        )
+        let startTime = CMTime(seconds: startSeconds, preferredTimescale: 48_000)
+        let chunkDuration = CMTime(
+            seconds: actualDurationSeconds,
+            preferredTimescale: 48_000
+        )
+
+        try FileManager.default.createDirectory(
+            at: outputURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? FileManager.default.removeItem(at: outputURL)
+
+        let reader = try AVAssetReader(asset: asset)
+        reader.timeRange = CMTimeRange(start: startTime, duration: chunkDuration)
+        let readerOutput = AVAssetReaderAudioMixOutput(
+            audioTracks: audioTracks,
+            audioSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 16_000,
+                AVNumberOfChannelsKey: 1,
+                AVLinearPCMBitDepthKey: 16,
+                AVLinearPCMIsFloatKey: false,
+                AVLinearPCMIsBigEndianKey: false,
+                AVLinearPCMIsNonInterleaved: false,
+            ]
+        )
+        readerOutput.alwaysCopiesSampleData = false
+        guard reader.canAdd(readerOutput) else {
+            throw MediaWorkerError.cannotCreateAudio
+        }
+        reader.add(readerOutput)
+
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .m4a)
+        let writerInput = AVAssetWriterInput(
+            mediaType: .audio,
+            outputSettings: [
+                AVFormatIDKey: kAudioFormatMPEG4AAC,
+                AVSampleRateKey: 16_000,
+                AVNumberOfChannelsKey: 1,
+                AVEncoderBitRateKey: 48_000,
+            ]
+        )
+        writerInput.expectsMediaDataInRealTime = false
+        guard writer.canAdd(writerInput) else {
+            throw MediaWorkerError.cannotCreateAudio
+        }
+        writer.add(writerInput)
+
+        guard writer.startWriting() else {
+            throw writer.error ?? MediaWorkerError.cannotCreateAudio
+        }
+        writer.startSession(atSourceTime: startTime)
+        guard reader.startReading() else {
+            throw reader.error ?? MediaWorkerError.cannotCreateAudio
+        }
+
+        while let sampleBuffer = readerOutput.copyNextSampleBuffer() {
+            while !writerInput.isReadyForMoreMediaData {
+                try await Task.sleep(for: .milliseconds(2))
+            }
+            guard writerInput.append(sampleBuffer) else {
+                reader.cancelReading()
+                throw writer.error ?? MediaWorkerError.cannotCreateAudio
+            }
+        }
+
+        writerInput.markAsFinished()
+        await withCheckedContinuation { continuation in
+            writer.finishWriting {
+                continuation.resume()
+            }
+        }
+
+        guard
+            reader.status == .completed,
+            writer.status == .completed
+        else {
+            throw writer.error
+                ?? reader.error
+                ?? MediaWorkerError.cannotCreateAudio
+        }
+
+        let attributes = try FileManager.default.attributesOfItem(
+            atPath: outputURL.path
+        )
+        let fileSize = (attributes[.size] as? NSNumber)?.int64Value ?? 0
+        return AudioExtraction(
+            durationMs: Int64((actualDurationSeconds * 1_000).rounded()),
+            fileSizeBytes: fileSize
         )
     }
 

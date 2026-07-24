@@ -1,9 +1,13 @@
 import {
   ArrowLeft,
+  AudioLines,
   Check,
+  ChevronDown,
   ChevronRight,
+  ChevronUp,
   Clipboard,
   Cloud,
+  FileText,
   Film,
   FolderOpen,
   HardDrive,
@@ -22,18 +26,28 @@ import {
   type User,
 } from "firebase/auth";
 import {
+  Fragment,
   type FormEvent,
   useCallback,
   useEffect,
   useMemo,
   useState,
 } from "react";
-import { listCloudProjects, saveProject, syncClipManifests } from "./lib/cloud";
+import {
+  listCloudProjects,
+  saveProject,
+  syncClipManifests,
+  syncTranscriptChunk,
+} from "./lib/cloud";
 import type {
+  ClipTranscriptSummary,
   ClipManifest,
   ImportProgress,
   LocalProject,
   Project,
+  TranscriptSearchMatch,
+  TranscriptUtterance,
+  TranscriptionChunk,
 } from "./lib/contracts";
 import {
   firebaseConfigurationError,
@@ -46,17 +60,31 @@ import {
 } from "./lib/format";
 import {
   chooseFolder,
+  completeTranscriptionChunk,
+  extractTranscriptionChunk,
   isTauri,
   listLocalClips,
   listLocalProjects,
+  listTranscriptSummaries,
+  listTranscriptUtterances,
+  listTranscriptionChunks,
   onImportProgress,
   posterSource,
+  prepareTranscription,
   relinkFolder,
   revealClip,
   scanFolder,
+  searchTranscripts,
+  transcriptChunkPayload,
+  transcribeAudioChunk,
   upsertLocalProject,
 } from "./lib/native";
 import { clipTimecode } from "./lib/timecode";
+import {
+  beginTranscriptionChunk,
+  completeCloudTranscriptionChunk,
+  estimateTranscriptionCost,
+} from "./lib/transcription";
 
 export function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -495,6 +523,28 @@ function CatalogScreen({
   const [working, setWorking] = useState(false);
   const [query, setQuery] = useState("");
   const [progress, setProgress] = useState<ImportProgress | null>(null);
+  const [transcriptSummaries, setTranscriptSummaries] = useState<
+    Record<string, ClipTranscriptSummary>
+  >({});
+  const [utterancesByClip, setUtterancesByClip] = useState<
+    Record<string, TranscriptUtterance[]>
+  >({});
+  const [expandedTranscriptIds, setExpandedTranscriptIds] = useState<
+    Set<string>
+  >(new Set());
+  const [loadingTranscriptIds, setLoadingTranscriptIds] = useState<Set<string>>(
+    new Set(),
+  );
+  const [transcriptMatches, setTranscriptMatches] = useState<
+    TranscriptSearchMatch[]
+  >([]);
+  const [transcribingClipId, setTranscribingClipId] = useState<string | null>(
+    null,
+  );
+  const [transcriptionProgress, setTranscriptionProgress] = useState<
+    string | null
+  >(null);
+  const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
   const [notice, setNotice] = useState<{
     tone: "error" | "success" | "warning";
     message: string;
@@ -512,9 +562,21 @@ function CatalogScreen({
     }
   }, [project.id]);
 
+  const refreshTranscriptSummaries = useCallback(async () => {
+    try {
+      const summaries = await listTranscriptSummaries(project.id);
+      setTranscriptSummaries(
+        Object.fromEntries(summaries.map((summary) => [summary.clipId, summary])),
+      );
+    } catch (error) {
+      setNotice({ tone: "error", message: readableError(error) });
+    }
+  }, [project.id]);
+
   useEffect(() => {
     void refreshClips();
-  }, [refreshClips]);
+    void refreshTranscriptSummaries();
+  }, [refreshClips, refreshTranscriptSummaries]);
 
   useEffect(() => {
     let cleanup: () => void = () => {};
@@ -524,21 +586,49 @@ function CatalogScreen({
     return () => cleanup();
   }, []);
 
+  useEffect(() => {
+    let cancelled = false;
+    const normalized = query.trim();
+    if (normalized.length < 2) {
+      setTranscriptMatches([]);
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      void searchTranscripts(project.id, normalized)
+        .then((matches) => {
+          if (!cancelled) setTranscriptMatches(matches);
+        })
+        .catch((error) => {
+          if (!cancelled) {
+            setNotice({ tone: "error", message: readableError(error) });
+          }
+        });
+    }, 180);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeout);
+    };
+  }, [project.id, query]);
+
   const visibleClips = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     if (!normalized) return clips;
-    return clips.filter((clip) =>
-      [
-        clip.filename,
-        clip.videoCodec,
-        clip.audioCodec ?? "",
-        clip.portableDirectoryHint,
-      ]
-        .join(" ")
-        .toLocaleLowerCase()
-        .includes(normalized),
+    const transcriptClipIds = new Set(
+      transcriptMatches.map((match) => match.clipId),
     );
-  }, [clips, query]);
+    return clips.filter(
+      (clip) =>
+        [
+          clip.filename,
+          clip.videoCodec,
+          clip.audioCodec ?? "",
+          clip.portableDirectoryHint,
+        ]
+          .join(" ")
+          .toLocaleLowerCase()
+          .includes(normalized) || transcriptClipIds.has(clip.id),
+    );
+  }, [clips, query, transcriptMatches]);
 
   const totalDuration = clips.reduce(
     (sum, clip) => sum + clip.durationMs,
@@ -600,6 +690,184 @@ function CatalogScreen({
     window.setTimeout(() => setCopiedId(null), 1_500);
   }
 
+  async function toggleTranscript(clipId: string) {
+    if (expandedTranscriptIds.has(clipId)) {
+      setExpandedTranscriptIds((current) => {
+        const next = new Set(current);
+        next.delete(clipId);
+        return next;
+      });
+      return;
+    }
+
+    setExpandedTranscriptIds((current) => new Set(current).add(clipId));
+    if (utterancesByClip[clipId]) return;
+    setLoadingTranscriptIds((current) => new Set(current).add(clipId));
+    try {
+      const utterances = await listTranscriptUtterances(project.id, clipId);
+      setUtterancesByClip((current) => ({ ...current, [clipId]: utterances }));
+    } catch (error) {
+      setNotice({ tone: "error", message: readableError(error) });
+    } finally {
+      setLoadingTranscriptIds((current) => {
+        const next = new Set(current);
+        next.delete(clipId);
+        return next;
+      });
+    }
+  }
+
+  async function processClipTranscription(clip: ClipManifest) {
+    let chunks = await prepareTranscription(project.id, clip.id);
+    for (let position = 0; position < chunks.length; position += 1) {
+      let chunk = chunks[position];
+      if (chunk.stage === "complete") continue;
+
+      let payload;
+      let reservationId = chunk.reservationId;
+      if (chunk.stage === "syncing") {
+        setTranscriptionProgress(
+          `${clip.filename}: resuming cloud sync (${position + 1}/${chunks.length})`,
+        );
+        payload = await transcriptChunkPayload(
+          project.id,
+          clip.id,
+          chunk.chunkIndex,
+        );
+        if (!reservationId) {
+          throw new Error(
+            "The saved transcript is missing its usage reservation. Retry the clip.",
+          );
+        }
+      } else {
+        setTranscriptionProgress(
+          `${clip.filename}: extracting audio (${position + 1}/${chunks.length})`,
+        );
+        chunk = await extractTranscriptionChunk(
+          project.id,
+          clip.id,
+          chunk.chunkIndex,
+        );
+        setTranscriptionProgress(
+          `${clip.filename}: reserving ${formatUsd(
+            estimateTranscriptionCost(chunk.durationMs),
+          )} and requesting a temporary Deepgram token`,
+        );
+        const grant = await beginTranscriptionChunk({
+          projectId: project.id,
+          clipId: clip.id,
+          chunkIndex: chunk.chunkIndex,
+        });
+        if (grant.alreadyCompleted) {
+          throw new Error(
+            "This chunk is complete in the cloud but missing locally. Cloud recovery will be added before multi-device collaboration.",
+          );
+        }
+        if (!grant.accessToken) {
+          throw new Error("Firebase did not return a temporary Deepgram token.");
+        }
+        reservationId = grant.reservationId;
+        setTranscriptionProgress(
+          `${clip.filename}: transcribing with Nova-3 (${position + 1}/${chunks.length})`,
+        );
+        payload = await transcribeAudioChunk(
+          project.id,
+          clip.id,
+          chunk.chunkIndex,
+          grant.accessToken,
+          grant.reservationId,
+          grant.estimatedCostUsd,
+        );
+      }
+
+      setTranscriptionProgress(
+        `${clip.filename}: saving the transcript (${position + 1}/${chunks.length})`,
+      );
+      await syncTranscriptChunk(payload);
+      await completeCloudTranscriptionChunk({
+        projectId: project.id,
+        reservationId,
+        requestId: payload.chunk.requestId,
+      });
+      await completeTranscriptionChunk(
+        project.id,
+        clip.id,
+        chunk.chunkIndex,
+      );
+      chunks = await listTranscriptionChunks(project.id, clip.id);
+    }
+
+    const utterances = await listTranscriptUtterances(project.id, clip.id);
+    setUtterancesByClip((current) => ({ ...current, [clip.id]: utterances }));
+    await refreshTranscriptSummaries();
+  }
+
+  async function startClipTranscription(clip: ClipManifest) {
+    setTranscribingClipId(clip.id);
+    setNotice(null);
+    try {
+      await processClipTranscription(clip);
+      setExpandedTranscriptIds((current) => new Set(current).add(clip.id));
+      setNotice({
+        tone: "success",
+        message: `Transcript ready for ${clip.filename}. Temporary audio chunks were deleted.`,
+      });
+    } catch (error) {
+      await refreshTranscriptSummaries();
+      setNotice({ tone: "error", message: readableError(error) });
+    } finally {
+      setTranscribingClipId(null);
+      setTranscriptionProgress(null);
+    }
+  }
+
+  async function transcribeRemainingClips() {
+    setTranscriptionDialogOpen(false);
+    setNotice(null);
+    try {
+      for (const clip of remainingTranscribableClips) {
+        setTranscribingClipId(clip.id);
+        await processClipTranscription(clip);
+      }
+      setNotice({
+        tone: "success",
+        message: `${remainingTranscribableClips.length} clip${
+          remainingTranscribableClips.length === 1 ? "" : "s"
+        } transcribed. Audio derivatives were removed after safe sync.`,
+      });
+    } catch (error) {
+      await refreshTranscriptSummaries();
+      setNotice({ tone: "error", message: readableError(error) });
+    } finally {
+      setTranscribingClipId(null);
+      setTranscriptionProgress(null);
+    }
+  }
+
+  const remainingTranscribableClips = clips.filter(
+    (clip) =>
+      clip.hasAudio && transcriptSummaries[clip.id]?.stage !== "complete",
+  );
+  const remainingTranscriptionCost = remainingTranscribableClips.reduce(
+    (sum, clip) => {
+      const summary = transcriptSummaries[clip.id];
+      const remainingRatio =
+        summary && summary.totalChunks > 0
+          ? Math.max(
+              0,
+              (summary.totalChunks - summary.completedChunks) /
+                summary.totalChunks,
+            )
+          : 1;
+      return sum + estimateTranscriptionCost(clip.durationMs * remainingRatio);
+    },
+    0,
+  );
+  const recordedTranscriptionCost = Object.values(transcriptSummaries).reduce(
+    (sum, summary) => sum + summary.estimatedCostUsd,
+    0,
+  );
+
   return (
     <main className="catalog-shell">
       <header className="catalog-topbar">
@@ -621,7 +889,20 @@ function CatalogScreen({
         <div className="topbar-actions">
           <button
             className="secondary-button compact"
-            disabled={working || !isTauri}
+            disabled={
+              working ||
+              Boolean(transcribingClipId) ||
+              !isTauri ||
+              remainingTranscribableClips.length === 0
+            }
+            onClick={() => setTranscriptionDialogOpen(true)}
+          >
+            <AudioLines size={16} />
+            Transcribe footage
+          </button>
+          <button
+            className="secondary-button compact"
+            disabled={working || Boolean(transcribingClipId) || !isTauri}
             onClick={() => void relink()}
           >
             <RefreshCw size={16} />
@@ -629,7 +910,7 @@ function CatalogScreen({
           </button>
           <button
             className="primary-button compact"
-            disabled={working || !isTauri}
+            disabled={working || Boolean(transcribingClipId) || !isTauri}
             onClick={() => void importFolder()}
           >
             {working ? (
@@ -652,6 +933,10 @@ function CatalogScreen({
           <Metric value={clips.length.toLocaleString()} label="clips" />
           <Metric value={formatDuration(totalDuration)} label="footage" />
           <Metric value={formatBytes(totalBytes)} label="source drives" />
+          <Metric
+            value={formatUsd(recordedTranscriptionCost)}
+            label="transcription"
+          />
         </div>
       </section>
 
@@ -670,6 +955,16 @@ function CatalogScreen({
           <progress max={Math.max(progress.total, 1)} value={progress.completed} />
         </div>
       )}
+      {transcribingClipId && transcriptionProgress && (
+        <div className="progress-panel transcription">
+          <div>
+            <AudioLines className="pulse" size={17} />
+            <span>{transcriptionProgress}</span>
+          </div>
+          <strong>Keep Docubase open</strong>
+          <progress />
+        </div>
+      )}
 
       <section className="catalog-panel">
         <div className="catalog-toolbar">
@@ -677,7 +972,7 @@ function CatalogScreen({
             <Search size={17} />
             <input
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Filter by clip name, codec, or folder"
+              placeholder="Search clip names, codecs, folders, or spoken words"
               value={query}
             />
           </label>
@@ -719,6 +1014,7 @@ function CatalogScreen({
                   <th>Source timecode</th>
                   <th>Size</th>
                   <th>Status</th>
+                  <th>Transcript</th>
                   <th>
                     <span className="visually-hidden">Actions</span>
                   </th>
@@ -727,6 +1023,11 @@ function CatalogScreen({
               <tbody>
                 {visibleClips.map((clip) => {
                   const source = posterSource(clip.posterPath);
+                  const transcriptSummary = transcriptSummaries[clip.id];
+                  const transcriptMatch = transcriptMatches.find(
+                    (match) => match.clipId === clip.id,
+                  );
+                  const transcriptOpen = expandedTranscriptIds.has(clip.id);
                   const timecode =
                     clip.startTimecodeFrames === null
                       ? "—"
@@ -736,7 +1037,8 @@ function CatalogScreen({
                           clip.startTimecodeFrames,
                         );
                   return (
-                    <tr key={clip.id}>
+                    <Fragment key={clip.id}>
+                    <tr>
                       <td>
                         <div className="clip-cell">
                           <div className="poster">
@@ -753,6 +1055,11 @@ function CatalogScreen({
                             <span>
                               {clip.portableDirectoryHint || "Footage"}
                             </span>
+                            {transcriptMatch && (
+                              <span className="spoken-match">
+                                “{transcriptMatch.text}”
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -801,6 +1108,32 @@ function CatalogScreen({
                       </td>
                       <td>
                         <button
+                          className={`transcript-toggle ${
+                            transcriptSummary?.stage ?? "not_started"
+                          }`}
+                          disabled={!clip.hasAudio}
+                          onClick={() => void toggleTranscript(clip.id)}
+                        >
+                          <FileText size={13} />
+                          {!clip.hasAudio
+                            ? "No audio"
+                            : transcriptSummary?.stage === "complete"
+                              ? `${transcriptSummary.utteranceCount} lines`
+                              : transcriptSummary?.stage === "failed"
+                                ? "Retry"
+                                : transcriptSummary?.stage === "not_started" ||
+                                    !transcriptSummary
+                                  ? "Not started"
+                                  : transcriptSummary.stage}
+                          {transcriptOpen ? (
+                            <ChevronUp size={13} />
+                          ) : (
+                            <ChevronDown size={13} />
+                          )}
+                        </button>
+                      </td>
+                      <td>
+                        <button
                           className="row-action"
                           onClick={() =>
                             void revealClip(project.id, clip.id).catch(
@@ -816,6 +1149,22 @@ function CatalogScreen({
                         </button>
                       </td>
                     </tr>
+                    {transcriptOpen && (
+                      <tr className="transcript-row">
+                        <td colSpan={9}>
+                          <TranscriptPanel
+                            clip={clip}
+                            loading={loadingTranscriptIds.has(clip.id)}
+                            onTranscribe={() => void startClipTranscription(clip)}
+                            query={query}
+                            summary={transcriptSummary}
+                            transcribing={transcribingClipId === clip.id}
+                            utterances={utterancesByClip[clip.id] ?? []}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                    </Fragment>
                   );
                 })}
               </tbody>
@@ -823,7 +1172,171 @@ function CatalogScreen({
           </div>
         )}
       </section>
+      {transcriptionDialogOpen && (
+        <TranscriptionDialog
+          clipCount={remainingTranscribableClips.length}
+          durationMs={remainingTranscribableClips.reduce(
+            (sum, clip) => sum + clip.durationMs,
+            0,
+          )}
+          estimatedCostUsd={remainingTranscriptionCost}
+          onCancel={() => setTranscriptionDialogOpen(false)}
+          onConfirm={() => void transcribeRemainingClips()}
+        />
+      )}
     </main>
+  );
+}
+
+function TranscriptPanel({
+  clip,
+  summary,
+  utterances,
+  loading,
+  transcribing,
+  query,
+  onTranscribe,
+}: {
+  clip: ClipManifest;
+  summary: ClipTranscriptSummary | undefined;
+  utterances: TranscriptUtterance[];
+  loading: boolean;
+  transcribing: boolean;
+  query: string;
+  onTranscribe: () => void;
+}) {
+  const estimatedCost = estimateTranscriptionCost(clip.durationMs);
+  return (
+    <div className="transcript-panel">
+      <div className="transcript-heading">
+        <div>
+          <span className="eyebrow">Timestamped dialogue</span>
+          <h3>{clip.filename}</h3>
+          <p>
+            Nova-3 English, smart formatting, word timestamps, and speaker
+            diarization. Estimated maximum: {formatUsd(estimatedCost)}.
+          </p>
+        </div>
+        {clip.hasAudio && summary?.stage !== "complete" && (
+          <button
+            className="primary-button compact"
+            disabled={transcribing}
+            onClick={onTranscribe}
+          >
+            {transcribing ? (
+              <LoaderCircle className="spin" size={16} />
+            ) : (
+              <AudioLines size={16} />
+            )}
+            {summary?.stage === "failed" ? "Retry transcript" : "Transcribe clip"}
+          </button>
+        )}
+      </div>
+      {summary?.error && <Notice tone="error">{summary.error}</Notice>}
+      {loading ? (
+        <LoadingBlock label="Reading the local transcript…" />
+      ) : summary?.stage === "complete" && utterances.length === 0 ? (
+        <div className="transcript-empty">
+          No speech was detected in this clip.
+        </div>
+      ) : utterances.length === 0 ? (
+        <div className="transcript-empty">
+          Transcribe this clip to search and review its spoken content.
+        </div>
+      ) : (
+        <div className="utterance-list">
+          {utterances.map((utterance) => (
+            <div
+              className={`utterance ${
+                query.trim() &&
+                utterance.text
+                  .toLocaleLowerCase()
+                  .includes(query.trim().toLocaleLowerCase())
+                  ? "match"
+                  : ""
+              }`}
+              key={utterance.id}
+            >
+              <div className="utterance-meta">
+                <strong>
+                  {utterance.speaker === null
+                    ? "Speaker"
+                    : `Speaker ${utterance.speaker + 1}`}
+                </strong>
+                <span>
+                  {clipTimecode(
+                    utterance.startMs,
+                    clip.frameRate,
+                    clip.startTimecodeFrames,
+                  )}
+                </span>
+              </div>
+              <p>{utterance.text}</p>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function TranscriptionDialog({
+  clipCount,
+  durationMs,
+  estimatedCostUsd,
+  onCancel,
+  onConfirm,
+}: {
+  clipCount: number;
+  durationMs: number;
+  estimatedCostUsd: number;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="modal-backdrop" role="presentation">
+      <section
+        aria-label="Confirm transcription"
+        className="modal-card transcription-dialog"
+      >
+        <div>
+          <span className="eyebrow">Cost-controlled transcription</span>
+          <h2>Transcribe remaining footage?</h2>
+          <p>
+            Docubase will process {clipCount} clip{clipCount === 1 ? "" : "s"} (
+            {formatDuration(durationMs)}) sequentially.
+          </p>
+        </div>
+        <div className="cost-callout">
+          <div>
+            <span>Estimated provider cost</span>
+            <strong>{formatUsd(estimatedCostUsd)}</strong>
+          </div>
+          <p>
+            Audio is converted locally to temporary 48 kbps mono chunks, sent
+            directly to Deepgram, and deleted after the transcript is safely
+            stored. Original video is never uploaded.
+          </p>
+        </div>
+        <div className="provider-settings">
+          <span>Model</span>
+          <strong>Nova-3 English</strong>
+          <span>Chunk size</span>
+          <strong>30 minutes</strong>
+          <span>Diarization</span>
+          <strong>Latest batch model</strong>
+        </div>
+        <div className="modal-actions">
+          <button className="secondary-button" onClick={onCancel} type="button">
+            Cancel
+          </button>
+          <button className="primary-button" onClick={onConfirm} type="button">
+            <AudioLines size={17} />
+            Start transcription
+          </button>
+        </div>
+      </section>
+    </div>
   );
 }
 
@@ -879,6 +1392,15 @@ function splitTerms(value: string): string[] {
     .split(",")
     .map((term) => term.trim())
     .filter(Boolean);
+}
+
+function formatUsd(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: value < 1 ? 2 : 2,
+    maximumFractionDigits: value < 0.01 ? 3 : 2,
+  }).format(value);
 }
 
 function readableError(error: unknown): string {

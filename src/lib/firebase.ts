@@ -9,6 +9,11 @@ import {
   getFirestore,
   type Firestore,
 } from "firebase/firestore";
+import {
+  connectFunctionsEmulator,
+  getFunctions,
+  type Functions,
+} from "firebase/functions";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -29,6 +34,7 @@ export const firebaseConfigurationError =
 
 export let auth: Auth | null = null;
 export let db: Firestore | null = null;
+export let functions: Functions | null = null;
 
 if (!firebaseConfigurationError) {
   const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -37,6 +43,7 @@ if (!firebaseConfigurationError) {
     app,
     import.meta.env.VITE_FIREBASE_DATABASE_ID || "default",
   );
+  functions = getFunctions(app, "us-central1");
 
   if (
     import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true" &&
@@ -47,6 +54,7 @@ if (!firebaseConfigurationError) {
       disableWarnings: true,
     });
     connectFirestoreEmulator(db, "127.0.0.1", 8080);
+    connectFunctionsEmulator(functions, "127.0.0.1", 5001);
     (
       globalThis as { __DOCUBASE_EMULATORS_CONNECTED__?: boolean }
     ).__DOCUBASE_EMULATORS_CONNECTED__ = true;
@@ -63,4 +71,13 @@ export function requireDb(): Firestore {
     throw new Error(firebaseConfigurationError ?? "Firestore is unavailable.");
   }
   return db;
+}
+
+export function requireFunctions(): Functions {
+  if (!functions) {
+    throw new Error(
+      firebaseConfigurationError ?? "Cloud Functions are unavailable.",
+    );
+  }
+  return functions;
 }

@@ -12,11 +12,23 @@ struct MediaWorkerCommand {
             let arguments = try CommandArguments(
                 arguments: Array(CommandLine.arguments.dropFirst())
             )
-            let inspection = try await MediaInspector().inspect(
-                mediaURL: URL(fileURLWithPath: arguments.mediaPath),
-                thumbnailURL: URL(fileURLWithPath: arguments.thumbnailPath)
-            )
-            try writeJSON(inspection, to: FileHandle.standardOutput)
+            let inspector = MediaInspector()
+            switch arguments {
+            case let .inspect(mediaPath, thumbnailPath):
+                let inspection = try await inspector.inspect(
+                    mediaURL: URL(fileURLWithPath: mediaPath),
+                    thumbnailURL: URL(fileURLWithPath: thumbnailPath)
+                )
+                try writeJSON(inspection, to: FileHandle.standardOutput)
+            case let .extractAudio(mediaPath, outputPath, startMs, durationMs):
+                let extraction = try await inspector.extractAudio(
+                    mediaURL: URL(fileURLWithPath: mediaPath),
+                    outputURL: URL(fileURLWithPath: outputPath),
+                    startMs: startMs,
+                    durationMs: durationMs
+                )
+                try writeJSON(extraction, to: FileHandle.standardOutput)
+            }
         } catch {
             try? writeJSON(
                 WorkerError(error: error.localizedDescription),
@@ -38,17 +50,16 @@ struct MediaWorkerCommand {
     }
 }
 
-private struct CommandArguments {
-    let mediaPath: String
-    let thumbnailPath: String
+private enum CommandArguments {
+    case inspect(mediaPath: String, thumbnailPath: String)
+    case extractAudio(
+        mediaPath: String,
+        outputPath: String,
+        startMs: Int64,
+        durationMs: Int64
+    )
 
     init(arguments: [String]) throws {
-        guard arguments.first == "inspect" else {
-            throw MediaWorkerError.invalidArguments(
-                "Usage: MediaWorker inspect --path <video> --thumbnail <jpeg>"
-            )
-        }
-
         func value(after flag: String) -> String? {
             guard let index = arguments.firstIndex(of: flag) else { return nil }
             let next = arguments.index(after: index)
@@ -56,16 +67,51 @@ private struct CommandArguments {
             return arguments[next]
         }
 
-        guard
-            let mediaPath = value(after: "--path"),
-            let thumbnailPath = value(after: "--thumbnail")
-        else {
+        guard let command = arguments.first else {
             throw MediaWorkerError.invalidArguments(
-                "Both --path and --thumbnail are required."
+                "Expected inspect or extract-audio."
             )
         }
 
-        self.mediaPath = mediaPath
-        self.thumbnailPath = thumbnailPath
+        switch command {
+        case "inspect":
+            guard
+                let mediaPath = value(after: "--path"),
+                let thumbnailPath = value(after: "--thumbnail")
+            else {
+                throw MediaWorkerError.invalidArguments(
+                    "Usage: MediaWorker inspect --path <video> --thumbnail <jpeg>"
+                )
+            }
+            self = .inspect(
+                mediaPath: mediaPath,
+                thumbnailPath: thumbnailPath
+            )
+        case "extract-audio":
+            guard
+                let mediaPath = value(after: "--path"),
+                let outputPath = value(after: "--output"),
+                let startValue = value(after: "--start-ms"),
+                let durationValue = value(after: "--duration-ms"),
+                let startMs = Int64(startValue),
+                let durationMs = Int64(durationValue),
+                startMs >= 0,
+                durationMs > 0
+            else {
+                throw MediaWorkerError.invalidArguments(
+                    "Usage: MediaWorker extract-audio --path <video> --output <m4a> --start-ms <ms> --duration-ms <ms>"
+                )
+            }
+            self = .extractAudio(
+                mediaPath: mediaPath,
+                outputPath: outputPath,
+                startMs: startMs,
+                durationMs: durationMs
+            )
+        default:
+            throw MediaWorkerError.invalidArguments(
+                "Expected inspect or extract-audio."
+            )
+        }
     }
 }

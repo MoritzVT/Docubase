@@ -130,12 +130,34 @@ source timecode.
 
 ### Goal 2 — Cost-controlled transcription
 
+Status: implemented and deployed to `docubase-455a4`.
+
 Add resumable local extraction of 30-minute mono AAC chunks, short-lived
 Deepgram credentials, Nova-3 transcription with utterance/word timestamps and
 diarization, transcript storage, expandable transcript rows, usage reservation,
 and interruption recovery. Goal 2 is usable as a dialogue/quote finder and is
 accepted against multi-speaker, silent, long, and interrupted clips with no
 audio retained in Firebase.
+
+Implemented scope:
+
+- AVFoundation extracts 16 kHz mono AAC at 48 kbps into deterministic,
+  fingerprinted local cache paths.
+- SQLite persists per-chunk extraction, transcription, sync, completion, and
+  failure state plus normalized utterances and words.
+- The desktop uploads temporary audio directly to Deepgram Nova-3 using a
+  five-minute token minted by Firebase; the permanent key remains in Secret
+  Manager.
+- Callable functions validate project membership, synced clip metadata, exact
+  chunk boundaries, and the configured per-footage-hour budget before reserving
+  cost. Completion is idempotent and creates a server-owned usage event.
+- Firestore stores chunk metadata and timestamped transcript evidence, while
+  security rules reject audio/local paths and protect usage records.
+- The clip table includes status, bulk and per-clip actions, a cost-confirmation
+  dialog, expandable speaker/timecode rows, quote search, and retries.
+- Completed audio is deleted; extracted and syncing stages are reusable after an
+  interruption. A failure after Deepgram accepts audio but before its response
+  is durably saved can still require one paid chunk retry.
 
 ### Goal 3 — Visual moments and clip descriptions
 
