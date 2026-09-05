@@ -73,11 +73,10 @@ pub(crate) fn initialize_database(path: &Path) -> Result<(), String> {
                 audio_path TEXT,
                 stage TEXT NOT NULL,
                 attempt_count INTEGER NOT NULL DEFAULT 0,
-                reservation_id TEXT,
-                deepgram_request_id TEXT,
+                transcription_id TEXT,
                 model TEXT,
                 model_version TEXT,
-                estimated_cost_usd REAL NOT NULL DEFAULT 0,
+                language TEXT,
                 error TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -171,6 +170,8 @@ pub(crate) fn initialize_database(path: &Path) -> Result<(), String> {
     }
     add_column_if_missing(&connection, "clips", "recorded_at", "TEXT")?;
     add_column_if_missing(&connection, "clips", "source_modified_at", "TEXT")?;
+    add_column_if_missing(&connection, "transcription_jobs", "transcription_id", "TEXT")?;
+    add_column_if_missing(&connection, "transcription_jobs", "language", "TEXT")?;
     backfill_source_modified_dates(&connection)?;
     Ok(())
 }

@@ -4,7 +4,6 @@ import { HttpsError } from "firebase-functions/v2/https";
 import { calculateVisualBudget } from "./budget.js";
 import {
   database,
-  DEEPGRAM_USD_PER_MINUTE,
   ESTIMATED_OUTPUT_TOKENS_PER_CLIP_SUMMARY,
   ESTIMATED_OUTPUT_TOKENS_PER_MOMENT,
   ESTIMATED_PROMPT_TOKENS_PER_CLIP_SUMMARY,
@@ -41,32 +40,18 @@ export async function releaseReservation(
     if (reservation.status !== "reserved") return;
     const usage = usageTotals(projectSnapshot.data()?.usage);
     const estimatedCostUsd = numeric(reservation.estimatedCostUsd);
-    const provider =
-      reservation.provider === "gemini" ||
-      String(reservation.id ?? reservationId).startsWith("visual-")
-        ? "gemini"
-        : "deepgram";
     const timestamp = new Date().toISOString();
     const nextUsage: UsageTotals & { updatedAt: string } = {
       actualUsd: usage.actualUsd,
       reservedUsd: roundUsd(
         Math.max(0, usage.reservedUsd - estimatedCostUsd),
       ),
-      deepgramActualUsd: usage.deepgramActualUsd,
-      deepgramReservedUsd: usage.deepgramReservedUsd,
       geminiActualUsd: usage.geminiActualUsd,
-      geminiReservedUsd: usage.geminiReservedUsd,
+      geminiReservedUsd: roundUsd(
+        Math.max(0, usage.geminiReservedUsd - estimatedCostUsd),
+      ),
       updatedAt: timestamp,
     };
-    if (provider === "gemini") {
-      nextUsage.geminiReservedUsd = roundUsd(
-        Math.max(0, usage.geminiReservedUsd - estimatedCostUsd),
-      );
-    } else {
-      nextUsage.deepgramReservedUsd = roundUsd(
-        Math.max(0, usage.deepgramReservedUsd - estimatedCostUsd),
-      );
-    }
     transaction.set(
       projectReference,
       {
@@ -154,7 +139,6 @@ export async function reserveVisualUsage(input: {
       projectDurationMs: input.projectDurationMs,
       projectClipCount: input.projectClipCount,
       budgetPerFootageHour: numeric(project.budgetPerFootageHour),
-      deepgramUsdPerMinute: DEEPGRAM_USD_PER_MINUTE,
       geminiActualUsd: usage.geminiActualUsd,
       geminiReservedUsd: usage.geminiReservedUsd,
     });
@@ -173,8 +157,6 @@ export async function reserveVisualUsage(input: {
           reservedUsd: roundUsd(
             usage.reservedUsd + input.estimatedCostUsd,
           ),
-          deepgramActualUsd: usage.deepgramActualUsd,
-          deepgramReservedUsd: usage.deepgramReservedUsd,
           geminiActualUsd: usage.geminiActualUsd,
           geminiReservedUsd: roundUsd(
             usage.geminiReservedUsd + input.estimatedCostUsd,
@@ -241,8 +223,6 @@ export async function completeUsageReservation(input: {
           reservedUsd: roundUsd(
             Math.max(0, usage.reservedUsd - estimatedCostUsd),
           ),
-          deepgramActualUsd: usage.deepgramActualUsd,
-          deepgramReservedUsd: usage.deepgramReservedUsd,
           geminiActualUsd: roundUsd(
             usage.geminiActualUsd + actualCostUsd,
           ),

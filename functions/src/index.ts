@@ -3,11 +3,6 @@
 export { health } from "./health.js";
 export { deleteProject, uploadVisualFrame } from "./projects.js";
 export {
-  beginTranscriptionChunk,
-  completeTranscriptionChunk,
-  releaseTranscriptionChunk,
-} from "./transcription.js";
-export {
   refreshVisualAnalysis,
   submitVisualAnalysis,
 } from "./visual-analysis.js";

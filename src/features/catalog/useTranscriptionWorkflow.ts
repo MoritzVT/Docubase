@@ -16,12 +16,7 @@ import {
   transcriptChunkPayload,
   transcribeAudioChunk,
 } from "../../lib/native";
-import { formatUsd, readableError } from "../../lib/presentation";
-import {
-  beginTranscriptionChunk,
-  completeCloudTranscriptionChunk,
-  estimateTranscriptionCost,
-} from "../../lib/transcription";
+import { readableError } from "../../lib/presentation";
 import type { CatalogNotice } from "./types";
 
 export function useTranscriptionWorkflow(
@@ -98,7 +93,6 @@ export function useTranscriptionWorkflow(
       if (chunk.stage === "complete") continue;
 
       let payload;
-      let reservationId = chunk.reservationId;
       if (chunk.stage === "syncing") {
         setTranscriptionProgress(
           `${clip.filename}: resuming cloud sync (${position + 1}/${chunks.length})`,
@@ -108,11 +102,6 @@ export function useTranscriptionWorkflow(
           clip.id,
           chunk.chunkIndex,
         );
-        if (!reservationId) {
-          throw new Error(
-            "The saved transcript is missing its usage reservation. Retry the clip.",
-          );
-        }
       } else {
         setTranscriptionProgress(
           `${clip.filename}: extracting audio (${position + 1}/${chunks.length})`,
@@ -123,34 +112,13 @@ export function useTranscriptionWorkflow(
           chunk.chunkIndex,
         );
         setTranscriptionProgress(
-          `${clip.filename}: reserving ${formatUsd(
-            estimateTranscriptionCost(chunk.durationMs),
-          )} and requesting a temporary Deepgram token`,
-        );
-        const grant = await beginTranscriptionChunk({
-          projectId: project.id,
-          clipId: clip.id,
-          chunkIndex: chunk.chunkIndex,
-        });
-        if (grant.alreadyCompleted) {
-          throw new Error(
-            "This chunk is complete in the cloud but missing locally. Cloud recovery will be added before multi-device collaboration.",
-          );
-        }
-        if (!grant.accessToken) {
-          throw new Error("Firebase did not return a temporary Deepgram token.");
-        }
-        reservationId = grant.reservationId;
-        setTranscriptionProgress(
-          `${clip.filename}: transcribing with Nova-3 (${position + 1}/${chunks.length})`,
+          `${clip.filename}: transcribing locally with Apple Speech (${position + 1}/${chunks.length}). The first run may download Apple's language model.`,
         );
         payload = await transcribeAudioChunk(
           project.id,
           clip.id,
           chunk.chunkIndex,
-          grant.accessToken,
-          grant.reservationId,
-          grant.estimatedCostUsd,
+          [...project.knownNames, ...project.terminology],
         );
       }
 
@@ -158,11 +126,6 @@ export function useTranscriptionWorkflow(
         `${clip.filename}: saving the transcript (${position + 1}/${chunks.length})`,
       );
       await syncTranscriptChunk(payload);
-      await completeCloudTranscriptionChunk({
-        projectId: project.id,
-        reservationId,
-        requestId: payload.chunk.requestId,
-      });
       await completeTranscriptionChunk(
         project.id,
         clip.id,
@@ -184,7 +147,7 @@ export function useTranscriptionWorkflow(
       setExpandedTranscriptIds((current) => new Set(current).add(clip.id));
       setNotice({
         tone: "success",
-        message: `Transcript ready for ${clip.filename}. Temporary audio chunks were deleted.`,
+        message: `Transcript ready for ${clip.filename}. It was generated on this Mac, then the temporary audio was deleted.`,
       });
     } catch (error) {
       await refreshTranscriptSummaries();
@@ -207,7 +170,7 @@ export function useTranscriptionWorkflow(
         tone: "success",
         message: `${remainingTranscribableClips.length} clip${
           remainingTranscribableClips.length === 1 ? "" : "s"
-        } transcribed. Audio derivatives were removed after safe sync.`,
+        } transcribed locally. Temporary audio was removed after safe sync.`,
       });
     } catch (error) {
       await refreshTranscriptSummaries();
@@ -222,26 +185,6 @@ export function useTranscriptionWorkflow(
     (clip) =>
       clip.hasAudio && transcriptSummaries[clip.id]?.stage !== "complete",
   );
-  const remainingTranscriptionCost = remainingTranscribableClips.reduce(
-    (sum, clip) => {
-      const summary = transcriptSummaries[clip.id];
-      const remainingRatio =
-        summary && summary.totalChunks > 0
-          ? Math.max(
-              0,
-              (summary.totalChunks - summary.completedChunks) /
-                summary.totalChunks,
-            )
-          : 1;
-      return sum + estimateTranscriptionCost(clip.durationMs * remainingRatio);
-    },
-    0,
-  );
-  const recordedTranscriptionCost = Object.values(transcriptSummaries).reduce(
-    (sum, summary) => sum + summary.estimatedCostUsd,
-    0,
-  );
-
   return {
     transcriptSummaries,
     utterancesByClip,
@@ -255,7 +198,5 @@ export function useTranscriptionWorkflow(
     startClipTranscription,
     transcribeRemainingClips,
     remainingTranscribableClips,
-    remainingTranscriptionCost,
-    recordedTranscriptionCost,
   };
 }

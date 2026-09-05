@@ -4,7 +4,7 @@ import PackageDescription
 
 let package = Package(
     name: "MediaWorker",
-    platforms: [.macOS(.v13)],
+    platforms: [.macOS(.v26)],
     products: [
         .library(name: "MediaWorkerCore", targets: ["MediaWorkerCore"]),
         .executable(name: "MediaWorker", targets: ["MediaWorker"]),
@@ -16,6 +16,7 @@ let package = Package(
                 .linkedFramework("AVFoundation"),
                 .linkedFramework("CoreMedia"),
                 .linkedFramework("ImageIO"),
+                .linkedFramework("Speech"),
                 .linkedFramework("UniformTypeIdentifiers"),
             ]
         ),

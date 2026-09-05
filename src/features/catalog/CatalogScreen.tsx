@@ -94,8 +94,6 @@ export function CatalogScreen({
     startClipTranscription,
     transcribeRemainingClips,
     remainingTranscribableClips,
-    remainingTranscriptionCost,
-    recordedTranscriptionCost,
   } = useTranscriptionWorkflow(project, clips, setNotice);
 
   const {
@@ -376,10 +374,7 @@ export function CatalogScreen({
           <Metric value={clips.length.toLocaleString()} label="clips" />
           <Metric value={formatDuration(totalDuration)} label="footage" />
           <Metric value={formatBytes(totalBytes)} label="source drives" />
-          <Metric
-            value={formatUsd(recordedTranscriptionCost)}
-            label="transcription"
-          />
+          <Metric value="Local" label="transcription" />
           <Metric value={formatUsd(recordedVisualCost)} label="visual AI" />
         </div>
       </section>
@@ -752,7 +747,6 @@ export function CatalogScreen({
             (sum, clip) => sum + clip.durationMs,
             0,
           )}
-          estimatedCostUsd={remainingTranscriptionCost}
           onCancel={() => setTranscriptionDialogOpen(false)}
           onConfirm={() => void transcribeRemainingClips()}
         />

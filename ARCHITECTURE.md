@@ -54,11 +54,12 @@ flowchart LR
     Swift["Swift AVFoundation worker"]
     Cloud["Typed cloud.ts calls"]
     Firebase["Firebase Functions and Firestore"]
-    Providers["Deepgram and Gemini"]
+    Providers["Apple Speech and Gemini"]
 
     Editor --> Native --> Rust
     Rust <--> SQLite
     Rust --> Swift
+    Swift --> Providers
     Editor --> Cloud --> Firebase --> Providers
     Providers --> Firebase --> Cloud --> Editor
 ```
@@ -83,8 +84,7 @@ boundary.
   anywhere else.
 - `lib/cloud.ts` wraps Firestore and callable functions. UI code should not
   construct cloud paths anywhere else.
-- `lib/transcription.ts` and `lib/visual.ts` contain pure calculations that are
-  easy to unit test.
+- `lib/visual.ts` contains pure cost calculations that are easy to unit test.
 - `styles.css` is only an import list. `styles/` follows the same feature split
   as the React code.
 
@@ -114,6 +114,7 @@ finished.
 - `main.swift` parses a small JSON command-line protocol.
 - `MediaModels.swift` defines requests and responses.
 - `MediaInspector.swift` reads metadata and extracts audio.
+- `AppleSpeechTranscriber.swift` performs timestamped on-device transcription.
 - `FrameExtractor.swift` samples and filters visual evidence.
 - `TimecodeReader.swift` interprets source timecode metadata.
 
@@ -126,7 +127,6 @@ its JSON response, keeping Apple-specific code out of the rest of the app.
 - `index.ts` only exports deployable endpoints.
 - `shared.ts` configures Firebase and contains common request validation.
 - `usage.ts` reserves and reconciles provider costs.
-- `transcription.ts` mints short-lived Deepgram access and accounts for chunks.
 - `projects.ts` uploads validated frames and deletes projects.
 - `visual/submit.ts` and `visual/refresh.ts` submit and collect Gemini work.
 - `visual/requests.ts` and `visual/validation.ts` build requests and validate
@@ -134,9 +134,9 @@ its JSON response, keeping Apple-specific code out of the rest of the app.
 - `budget.ts`, `clip-summary.ts`, and `gemini-response.ts` are pure domain
   helpers with direct tests.
 
-Cloud Functions are security and billing boundaries. Provider secrets,
-membership checks, upload validation, and cost reservations belong here rather
-than in the desktop UI.
+Cloud Functions are security and billing boundaries for Gemini and protected
+thumbnail storage. Membership checks, upload validation, and visual-analysis
+cost reservations belong here rather than in the desktop UI.
 
 ## Three core workflows
 
@@ -153,10 +153,10 @@ than in the desktop UI.
 
 1. `useTranscriptionWorkflow` asks Rust to create deterministic 30-minute jobs.
 2. Rust asks Swift to extract one temporary AAC chunk.
-3. A callable validates the request, reserves budget, and returns a short-lived
-   Deepgram token.
-4. Rust uploads the audio directly to Deepgram and normalizes its response.
-5. The frontend saves the result to Firestore, marks the local job complete,
+3. Swift transcribes the chunk on-device with Apple SpeechAnalyzer and returns
+   timestamped text to Rust.
+4. Rust normalizes and durably saves the local response.
+5. The frontend saves the transcript to Firestore, marks the local job complete,
    and Rust deletes the temporary audio.
 
 ### Visual analysis

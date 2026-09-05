@@ -37,6 +37,13 @@ struct MediaWorkerCommand {
                     )
                 )
                 try writeJSON(extraction, to: FileHandle.standardOutput)
+            case let .transcribe(audioPath, localeIdentifier, contextualTerms):
+                let transcription = try await AppleSpeechTranscriber().transcribe(
+                    audioURL: URL(fileURLWithPath: audioPath),
+                    localeIdentifier: localeIdentifier,
+                    contextualTerms: contextualTerms
+                )
+                try writeJSON(transcription, to: FileHandle.standardOutput)
             }
         } catch {
             try? writeJSON(
@@ -68,6 +75,11 @@ private enum CommandArguments {
         durationMs: Int64
     )
     case extractFrames(mediaPath: String, outputDirectoryPath: String)
+    case transcribe(
+        audioPath: String,
+        localeIdentifier: String,
+        contextualTerms: [String]
+    )
 
     init(arguments: [String]) throws {
         func value(after flag: String) -> String? {
@@ -131,10 +143,30 @@ private enum CommandArguments {
                 mediaPath: mediaPath,
                 outputDirectoryPath: outputDirectoryPath
             )
+        case "transcribe":
+            guard let audioPath = value(after: "--audio") else {
+                throw MediaWorkerError.invalidArguments(
+                    "Usage: MediaWorker transcribe --audio <m4a> [--locale <locale>] [--context <term>]"
+                )
+            }
+            self = .transcribe(
+                audioPath: audioPath,
+                localeIdentifier: value(after: "--locale") ?? "en-US",
+                contextualTerms: Self.values(after: "--context", in: arguments)
+            )
         default:
             throw MediaWorkerError.invalidArguments(
-                "Expected inspect, extract-audio, or extract-frames."
+                "Expected inspect, extract-audio, extract-frames, or transcribe."
             )
+        }
+    }
+
+    private static func values(after flag: String, in arguments: [String]) -> [String] {
+        arguments.indices.compactMap { index in
+            guard arguments[index] == flag else { return nil }
+            let valueIndex = arguments.index(after: index)
+            guard valueIndex < arguments.endIndex else { return nil }
+            return arguments[valueIndex]
         }
     }
 }

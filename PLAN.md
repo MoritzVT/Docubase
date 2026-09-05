@@ -4,14 +4,14 @@
 
 Build a macOS-first desktop app using Tauri 2, React, and TypeScript, with a small native Swift media worker. This is preferable to a browser-only app because ingest requires reliable filesystem access, long-running local processing, source timecode extraction, and resumable work on attached drives. The React interface can later be deployed as the web client.
 
-Original video never leaves the workstation. Only compressed audio is sent directly to Deepgram, while selected 384-pixel thumbnails, transcripts, descriptions, tags, and embeddings are retained in Firebase. Contact sheets are generated from individual thumbnails when needed rather than stored as the canonical visual data.
+Original video never leaves the workstation. Audio is transcribed locally with Apple SpeechAnalyzer, while selected 384-pixel thumbnails, transcripts, descriptions, tags, and embeddings are retained in Firebase. Contact sheets are generated from individual thumbnails when needed rather than stored as the canonical visual data.
 
 ```mermaid
 flowchart LR
     A["Local MOV, MP4, or ProRes footage"] --> B["Swift media worker"]
     B --> C["Temporary audio chunks"]
     B --> D["Timestamped thumbnails"]
-    C --> E["Deepgram transcription"]
+    C --> E["Apple on-device transcription"]
     D --> F["Firebase Storage"]
     F --> G["Gemini batch analysis and embeddings"]
     E --> H["Firestore Enterprise"]
@@ -29,8 +29,8 @@ flowchart LR
 - Keep source paths, filesystem permissions, processing cache, face feature prints, and resumable job state in local SQLite. Cloud records store filenames, fingerprints, reel/timecode metadata, and per-device relink status—not absolute paths.
 - Fingerprint clips using size, duration, media metadata, and hashes sampled from the file so renamed footage can be relinked without hashing terabytes in full.
 - Extract source frame rate as a rational value, embedded starting timecode when available, and drop-frame status. Fall back to elapsed clip time when no source timecode exists.
-- Extract 30-minute, 48 kbps mono AAC audio chunks. Send them directly from the Mac to Deepgram using a short-lived token minted by Firebase; delete each local chunk after its transcript is safely committed. Deepgram supports prerecorded local audio and temporary client tokens while keeping the permanent key server-side. [Prerecorded audio limits](https://developers.deepgram.com/docs/pre-recorded-audio), [temporary token authentication](https://developers.deepgram.com/guides/fundamentals/token-based-authentication)
-- Use Nova-3 English with word timestamps, utterances, smart formatting, and diarization. Project-specific paid keyterm prompting remains off by default and is shown as an optional cost increase.
+- Extract 30-minute, 48 kbps mono AAC audio chunks. Transcribe them on-device with Apple SpeechAnalyzer, preserve word timestamps and confidence, and delete each chunk after its transcript is safely committed. [Apple SpeechAnalyzer](https://developer.apple.com/documentation/speech/speechanalyzer)
+- Use US English initially and supply editor-provided known names and terminology as contextual vocabulary. Speaker diarization is not included in the Apple pipeline.
 - Scan locally at roughly one low-resolution frame per second. Within each five-second bucket, retain the frame with the strongest visual change, skip near-duplicates, and force at least one frame every 30 seconds. This caps retention at 12 frames per minute while preserving more shot changes than fixed 30-second sampling.
 - Group retained frames chronologically into approximately 15-second visual moments. Keep individual timestamps and images so results can point to an exact frame.
 - Do not perform face detection or face clustering in Goal 3. Character names in
@@ -85,20 +85,20 @@ flowchart LR
   - `ClipManifest`, `IngestEstimate`, `ProcessingStage`, `FrameEvidence`, `TranscriptUtterance`, `IndexedMoment`, and `UsageEvent`.
   - `SearchRequest { projectId, query, scopes, filters, limit, cursor }`.
   - `SearchHit { clipId, momentId, matchKinds, thumbnail, quote, timestamp, sourceTimecode, score }`.
-- Implement authenticated backend operations for project creation/membership, ingest estimation, Deepgram token minting, transcript completion, analysis scheduling/status, project search, entity confirmation, metadata revision, and project deletion.
+- Implement authenticated backend operations for project creation/membership, analysis scheduling/status, project search, entity confirmation, metadata revision, and project deletion. Transcript generation itself remains local.
 
 ### Security and cost controls
 
-- Keep Deepgram and Gemini credentials in Google Secret Manager. Every function validates Firebase identity, project membership, requested duration, and remaining project budget.
+- Keep the Gemini credential in Google Secret Manager. Every paid function validates Firebase identity, project membership, requested workload, and remaining project budget.
 - Reserve estimated cost atomically before creating provider work, then reconcile against actual usage. Stop new work and request approval when reserved plus actual usage would exceed `footage duration × $0.50`.
 - Add per-user and per-project concurrency limits, Storage/Firestore security rules, audit records, and alerts at 50%, 80%, and 100% of the configured cloud budget.
-- Expect approximately $0.408 per footage hour for Nova-3 plus diarization at current pay-as-you-go rates, leaving roughly $0.09/hour for batched Gemini work. [Current Deepgram pricing](https://deepgram.com/pricing), [current Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing)
-- Target at most 15 MB of retained cloud derivatives per footage hour. One hundred hours should therefore retain roughly 1.5 GB or less, while temporary audio transfer to Deepgram is approximately 2.2 GB and is never persisted in Firebase.
+- On-device transcription has no per-minute provider charge, so the configured cloud budget is available to Gemini visual analysis. [Current Gemini pricing](https://ai.google.dev/gemini-api/docs/pricing)
+- Target at most 15 MB of retained cloud derivatives per footage hour. One hundred hours should therefore retain roughly 1.5 GB or less; temporary audio remains only in the local cache.
 
 ## Test Plan and Acceptance Criteria
 
 - Unit-test clip fingerprints, relinking, frame selection/deduplication, transcript overlap merging, source timecode conversion—including 23.976 and 29.97 drop-frame—and the resumable job state machine.
-- Contract-test malformed Deepgram/Gemini responses, expired tokens, batch partial failures, provider rate limits, duplicate callbacks, interrupted uploads, and budget exhaustion.
+- Contract-test malformed Apple Speech/Gemini responses, unavailable language models, batch partial failures, provider rate limits, duplicate callbacks, interrupted processing, and budget exhaustion.
 - Test MOV, MP4, and ProRes clips with multi-speaker audio, silent footage, missing timecode, rotated video, variable frame rate, long clips requiring multiple audio chunks, and moved or disconnected source drives.
 - Test Firebase rules in the Emulator Suite for owner/editor/viewer isolation and verify that source-video and audio objects are rejected by Storage rules.
 - Build a gold evaluation set from an under-10-hour real project with at least 25 searches spanning filename, spoken quote, named person, visual action, combined visual/topic query, and filters.
@@ -141,10 +141,9 @@ source timecode.
 
 Status: implemented and deployed to `docubase-455a4`.
 
-Add resumable local extraction of 30-minute mono AAC chunks, short-lived
-Deepgram credentials, Nova-3 transcription with utterance/word timestamps and
-diarization, transcript storage, expandable transcript rows, usage reservation,
-and interruption recovery. Goal 2 is usable as a dialogue/quote finder and is
+Add resumable local extraction of 30-minute mono AAC chunks, Apple on-device
+transcription with utterance/word timestamps, transcript storage, expandable
+transcript rows, contextual vocabulary, and interruption recovery. Goal 2 is usable as a dialogue/quote finder and is
 accepted against multi-speaker, silent, long, and interrupted clips with no
 audio retained in Firebase.
 
@@ -154,19 +153,14 @@ Implemented scope:
   fingerprinted local cache paths.
 - SQLite persists per-chunk extraction, transcription, sync, completion, and
   failure state plus normalized utterances and words.
-- The desktop uploads temporary audio directly to Deepgram Nova-3 using a
-  five-minute token minted by Firebase; the permanent key remains in Secret
-  Manager.
-- Callable functions validate project membership, synced clip metadata, exact
-  chunk boundaries, and the configured per-footage-hour budget before reserving
-  cost. Completion is idempotent and creates a server-owned usage event.
+- Apple SpeechAnalyzer transcribes each temporary chunk on the Mac and uses the
+  project's known names and terminology as contextual vocabulary.
 - Firestore stores chunk metadata and timestamped transcript evidence, while
   security rules reject audio/local paths and protect usage records.
-- The clip table includes status, bulk and per-clip actions, a cost-confirmation
-  dialog, expandable speaker/timecode rows, quote search, and retries.
+- The clip table includes status, bulk and per-clip actions, a local-processing
+  dialog, expandable dialogue/timecode rows, quote search, and retries.
 - Completed audio is deleted; extracted and syncing stages are reusable after an
-  interruption. A failure after Deepgram accepts audio but before its response
-  is durably saved can still require one paid chunk retry.
+  interruption, and retries never incur a transcription provider charge.
 
 ### Goal 3 — Visual moments and clip descriptions
 
@@ -265,6 +259,6 @@ credentials or local media.
 - Local unsigned development requires no paid Apple developer membership. Signing and notarization are deferred until distributing the app to other editors.
 - Face clustering is not part of the current product. Off-camera speakers
   cannot be reliably recognized across clips without future voice clustering.
-- The desktop app must remain open for local extraction and direct Deepgram uploads; Firebase/Gemini processing may continue after it closes.
+- The desktop app must remain open for local extraction and Apple transcription; Firebase/Gemini processing may continue after it closes.
 - The first milestone excludes Windows, browser access, source-video playback, stored audio proxies, Premiere/Resolve/Final Cut integration, and interchange export. It supports Reveal in Finder and Copy Timecode only.
 - App Check enforcement and a universal signed installer follow the validated vertical slice; authentication, authorization, quotas, and server-side secrets are included immediately.

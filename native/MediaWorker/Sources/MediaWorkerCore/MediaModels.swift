@@ -50,6 +50,28 @@ public struct AudioExtraction: Codable, Sendable {
     }
 }
 
+public struct SpeechTranscription: Codable, Sendable {
+    public let locale: String
+    public let model: String
+    public let modelVersion: String
+    public let segments: [SpeechSegment]
+}
+
+public struct SpeechSegment: Codable, Sendable {
+    public let text: String
+    public let startMs: Int64
+    public let endMs: Int64
+    public let confidence: Double
+    public let words: [SpeechWord]
+}
+
+public struct SpeechWord: Codable, Sendable {
+    public let text: String
+    public let startMs: Int64
+    public let endMs: Int64
+    public let confidence: Double
+}
+
 public struct RetainedFrame: Codable, Sendable {
     public let filename: String
     public let timestampMs: Int64
@@ -108,6 +130,8 @@ public enum MediaWorkerError: LocalizedError {
     case cannotCreateThumbnail
     case cannotCreateAudio
     case cannotReadTimecode
+    case speechTranscriptionUnavailable
+    case unsupportedSpeechLocale(String)
 
     public var errorDescription: String? {
         switch self {
@@ -123,6 +147,10 @@ public enum MediaWorkerError: LocalizedError {
             return "The requested audio chunk could not be created."
         case .cannotReadTimecode:
             return "The embedded timecode track could not be read."
+        case .speechTranscriptionUnavailable:
+            return "Apple Speech transcription is unavailable on this Mac. Docubase requires macOS 26 or later and a supported Apple silicon Mac."
+        case let .unsupportedSpeechLocale(locale):
+            return "Apple Speech does not support the requested locale: \(locale)."
         }
     }
 }

@@ -5,8 +5,9 @@ use sha2::{Digest, Sha256};
 
 use crate::database::connection;
 use crate::models::{
-    AppState, DeepgramResponse, DeepgramUtterance, TranscriptChunkDocument, TranscriptChunkPayload,
-    TranscriptUtterance, TranscriptWord, TranscriptionChunk, TRANSCRIPTION_CHUNK_DURATION_MS,
+    AppState, TranscriptChunkDocument, TranscriptChunkPayload, TranscriptUtterance,
+    TranscriptWord, TranscriptionChunk, WorkerSpeechTranscription,
+    TRANSCRIPTION_CHUNK_DURATION_MS,
 };
 use crate::utilities::{now, string_error};
 
@@ -21,8 +22,8 @@ pub(crate) fn list_transcription_chunks_inner(
             "
             SELECT
                 project_id, clip_id, chunk_index, start_ms, duration_ms,
-                stage, attempt_count, reservation_id, deepgram_request_id,
-                model, model_version, estimated_cost_usd, error, updated_at
+                stage, attempt_count, transcription_id, model, model_version,
+                language, error, updated_at
             FROM transcription_jobs
             WHERE project_id = ?1 AND clip_id = ?2
             ORDER BY chunk_index
@@ -49,8 +50,8 @@ pub(crate) fn transcription_chunk(
             "
             SELECT
                 project_id, clip_id, chunk_index, start_ms, duration_ms,
-                stage, attempt_count, reservation_id, deepgram_request_id,
-                model, model_version, estimated_cost_usd, error, updated_at
+                stage, attempt_count, transcription_id, model, model_version,
+                language, error, updated_at
             FROM transcription_jobs
             WHERE project_id = ?1 AND clip_id = ?2 AND chunk_index = ?3
             ",
@@ -61,7 +62,7 @@ pub(crate) fn transcription_chunk(
         .map_err(string_error)
 }
 
-pub(crate) fn transcription_chunk_from_row(row: &Row<'_>) -> rusqlite::Result<TranscriptionChunk> {
+fn transcription_chunk_from_row(row: &Row<'_>) -> rusqlite::Result<TranscriptionChunk> {
     let clip_id: String = row.get(1)?;
     let chunk_index: i64 = row.get(2)?;
     Ok(TranscriptionChunk {
@@ -73,13 +74,12 @@ pub(crate) fn transcription_chunk_from_row(row: &Row<'_>) -> rusqlite::Result<Tr
         duration_ms: row.get(4)?,
         stage: row.get(5)?,
         attempt_count: row.get(6)?,
-        reservation_id: row.get(7)?,
-        deepgram_request_id: row.get(8)?,
-        model: row.get(9)?,
-        model_version: row.get(10)?,
-        estimated_cost_usd: row.get(11)?,
-        error: row.get(12)?,
-        updated_at: row.get(13)?,
+        transcription_id: row.get(7)?,
+        model: row.get(8)?,
+        model_version: row.get(9)?,
+        language: row.get(10)?,
+        error: row.get(11)?,
+        updated_at: row.get(12)?,
     })
 }
 
@@ -147,7 +147,7 @@ pub(crate) fn list_transcript_utterances_inner(
     rows.collect::<Result<Vec<_>, _>>().map_err(string_error)
 }
 
-pub(crate) fn utterance_from_row(row: &Row<'_>) -> rusqlite::Result<TranscriptUtterance> {
+fn utterance_from_row(row: &Row<'_>) -> rusqlite::Result<TranscriptUtterance> {
     let words_json: String = row.get(9)?;
     Ok(TranscriptUtterance {
         id: row.get(0)?,
@@ -173,11 +173,11 @@ pub(crate) fn transcript_chunk_payload_inner(
 ) -> Result<TranscriptChunkPayload, String> {
     let chunk = transcription_chunk(state, project_id, clip_id, chunk_index)?
         .ok_or_else(|| "Transcription chunk not found.".to_string())?;
-    let request_id = chunk
-        .deepgram_request_id
+    let transcription_id = chunk
+        .transcription_id
         .clone()
         .filter(|value| !value.is_empty())
-        .ok_or_else(|| "This chunk does not have a saved Deepgram response.".to_string())?;
+        .ok_or_else(|| "This chunk does not have a saved local transcription.".to_string())?;
     let utterances =
         list_transcript_utterances_inner(state, project_id, clip_id, Some(chunk_index))?;
     let word_count = utterances
@@ -192,10 +192,12 @@ pub(crate) fn transcript_chunk_payload_inner(
             chunk_index: chunk.chunk_index,
             start_ms: chunk.start_ms,
             duration_ms: chunk.duration_ms,
-            request_id,
-            model: chunk.model.unwrap_or_else(|| "nova-3".to_string()),
+            request_id: transcription_id,
+            model: chunk
+                .model
+                .unwrap_or_else(|| "Apple SpeechTranscriber".to_string()),
             model_version: chunk.model_version,
-            language: "en".to_string(),
+            language: chunk.language.unwrap_or_else(|| "en-US".to_string()),
             utterance_count: utterances.len() as i64,
             word_count,
             created_at: chunk.updated_at.clone(),
@@ -205,92 +207,60 @@ pub(crate) fn transcript_chunk_payload_inner(
     })
 }
 
-pub(crate) fn save_deepgram_transcript(
+pub(crate) fn save_apple_transcript(
     state: &AppState,
     project_id: &str,
     clip_id: &str,
     chunk_index: i64,
-    response: DeepgramResponse,
+    transcription: WorkerSpeechTranscription,
 ) -> Result<TranscriptChunkPayload, String> {
     let chunk = transcription_chunk(state, project_id, clip_id, chunk_index)?
         .ok_or_else(|| "Transcription chunk not found.".to_string())?;
     let timestamp = now();
-    let request_id = response.metadata.request_id;
-    let first_model_id = response.metadata.models.first();
-    let model_info = first_model_id
-        .and_then(|model_id| response.metadata.model_info.get(model_id))
-        .or_else(|| response.metadata.model_info.values().next());
-    let model = model_info
-        .and_then(|info| info.name.clone())
-        .unwrap_or_else(|| "nova-3".to_string());
-    let model_version = model_info.and_then(|info| info.version.clone());
+    let transcription_id = local_transcription_id(project_id, clip_id, chunk_index);
 
-    let mut provider_utterances = response.results.utterances;
-    if provider_utterances.is_empty() {
-        if let Some(alternative) = response
-            .results
-            .channels
-            .into_iter()
-            .next()
-            .and_then(|channel| channel.alternatives.into_iter().next())
-        {
-            if !alternative.transcript.trim().is_empty() {
-                let start = alternative
-                    .words
-                    .first()
-                    .map(|word| word.start)
-                    .unwrap_or(0.0);
-                let end = alternative
-                    .words
-                    .last()
-                    .map(|word| word.end)
-                    .unwrap_or(chunk.duration_ms as f64 / 1_000.0);
-                let speaker = alternative.words.first().and_then(|word| word.speaker);
-                provider_utterances.push(DeepgramUtterance {
-                    id: None,
-                    start,
-                    end,
-                    confidence: alternative.confidence,
-                    transcript: alternative.transcript,
-                    speaker,
-                    words: alternative.words,
-                });
-            }
-        }
-    }
-
-    let utterances: Vec<TranscriptUtterance> = provider_utterances
+    let utterances: Vec<TranscriptUtterance> = transcription
+        .segments
         .into_iter()
         .enumerate()
-        .map(|(index, utterance)| {
-            let _provider_id = utterance.id;
-            let words = utterance
+        .filter_map(|(index, segment)| {
+            let text = segment.text.trim().to_string();
+            if text.is_empty() {
+                return None;
+            }
+            let words = segment
                 .words
                 .into_iter()
-                .map(|word| TranscriptWord {
-                    text: word.word.clone(),
-                    punctuated_text: word.punctuated_word.unwrap_or(word.word),
-                    start_ms: chunk.start_ms + seconds_to_milliseconds(word.start),
-                    end_ms: chunk.start_ms + seconds_to_milliseconds(word.end),
-                    confidence: bounded_confidence(word.confidence),
-                    speaker: word.speaker.filter(|speaker| *speaker >= 0),
-                    speaker_confidence: word.speaker_confidence.map(bounded_confidence),
+                .filter_map(|word| {
+                    let text = word.text.trim().to_string();
+                    if text.is_empty() {
+                        return None;
+                    }
+                    Some(TranscriptWord {
+                        punctuated_text: text.clone(),
+                        text,
+                        start_ms: chunk.start_ms + word.start_ms.max(0),
+                        end_ms: chunk.start_ms + word.end_ms.max(word.start_ms).max(0),
+                        confidence: bounded_confidence(word.confidence),
+                        speaker: None,
+                        speaker_confidence: None,
+                    })
                 })
                 .collect();
-            TranscriptUtterance {
+            Some(TranscriptUtterance {
                 id: format!("chunk-{chunk_index:04}-utterance-{index:06}"),
                 project_id: project_id.to_string(),
                 clip_id: clip_id.to_string(),
                 chunk_index,
-                start_ms: chunk.start_ms + seconds_to_milliseconds(utterance.start),
-                end_ms: chunk.start_ms + seconds_to_milliseconds(utterance.end),
-                speaker: utterance.speaker.filter(|speaker| *speaker >= 0),
-                confidence: bounded_confidence(utterance.confidence),
-                text: utterance.transcript,
+                start_ms: chunk.start_ms + segment.start_ms.max(0),
+                end_ms: chunk.start_ms + segment.end_ms.max(segment.start_ms).max(0),
+                speaker: None,
+                confidence: bounded_confidence(segment.confidence),
+                text,
                 words,
                 created_at: timestamp.clone(),
                 updated_at: timestamp.clone(),
-            }
+            })
         })
         .collect();
 
@@ -335,14 +305,15 @@ pub(crate) fn save_deepgram_transcript(
         .execute(
             "
             UPDATE transcription_jobs
-            SET stage = 'syncing', deepgram_request_id = ?1, model = ?2,
-                model_version = ?3, error = NULL, updated_at = ?4
-            WHERE project_id = ?5 AND clip_id = ?6 AND chunk_index = ?7
+            SET stage = 'syncing', transcription_id = ?1, model = ?2,
+                model_version = ?3, language = ?4, error = NULL, updated_at = ?5
+            WHERE project_id = ?6 AND clip_id = ?7 AND chunk_index = ?8
             ",
             params![
-                request_id,
-                model,
-                model_version,
+                transcription_id,
+                transcription.model,
+                transcription.model_version,
+                transcription.locale,
                 timestamp,
                 project_id,
                 clip_id,
@@ -352,6 +323,16 @@ pub(crate) fn save_deepgram_transcript(
         .map_err(string_error)?;
     transaction.commit().map_err(string_error)?;
     transcript_chunk_payload_inner(state, project_id, clip_id, chunk_index)
+}
+
+fn local_transcription_id(project_id: &str, clip_id: &str, chunk_index: i64) -> String {
+    let digest = Sha256::digest(format!("{project_id}:{clip_id}:{chunk_index}").as_bytes());
+    let value = digest
+        .iter()
+        .take(12)
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("local-{value}")
 }
 
 pub(crate) fn audio_chunk_path(
@@ -372,15 +353,7 @@ pub(crate) fn audio_chunk_path(
         .join(format!("chunk-{chunk_index:04}.m4a"))
 }
 
-pub(crate) fn seconds_to_milliseconds(seconds: f64) -> i64 {
-    if seconds.is_finite() {
-        (seconds.max(0.0) * 1_000.0).round() as i64
-    } else {
-        0
-    }
-}
-
-pub(crate) fn bounded_confidence(confidence: f64) -> f64 {
+fn bounded_confidence(confidence: f64) -> f64 {
     if confidence.is_finite() {
         confidence.clamp(0.0, 1.0)
     } else {

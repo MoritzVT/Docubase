@@ -1,14 +1,13 @@
-use std::{path::Path, time::Duration};
+use std::path::Path;
 
-use reqwest::header::CONTENT_TYPE;
 use rusqlite::{params, OptionalExtension};
 use tauri::{AppHandle, State};
 
 use crate::database::connection;
-use crate::media::extract_audio;
+use crate::media::{extract_audio, transcribe_audio};
 use crate::models::{
-    AppState, ClipTranscriptSummary, DeepgramResponse, TranscriptChunkPayload,
-    TranscriptSearchMatch, TranscriptUtterance, TranscriptionChunk, DEEPGRAM_API_BASE,
+    AppState, ClipTranscriptSummary, TranscriptChunkPayload, TranscriptSearchMatch,
+    TranscriptUtterance, TranscriptionChunk,
 };
 use crate::utilities::{now, string_error};
 
@@ -49,9 +48,8 @@ pub(crate) fn prepare_transcription(
                 "
                 INSERT OR IGNORE INTO transcription_jobs (
                     project_id, clip_id, chunk_index, start_ms, duration_ms,
-                    audio_path, stage, attempt_count, estimated_cost_usd,
-                    created_at, updated_at
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued', 0, 0, ?7, ?7)
+                    audio_path, stage, attempt_count, created_at, updated_at
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'queued', 0, ?7, ?7)
                 ",
                 params![
                     project_id,
@@ -102,7 +100,6 @@ pub(crate) fn list_transcript_summaries(
                     FROM transcript_utterances u
                     WHERE u.project_id = c.project_id AND u.clip_id = c.id
                 ),
-                COALESCE(SUM(j.estimated_cost_usd), 0),
                 MAX(j.error),
                 MAX(j.updated_at)
             FROM clips c
@@ -150,9 +147,8 @@ pub(crate) fn list_transcript_summaries(
                 total_chunks,
                 completed_chunks,
                 utterance_count: row.get(9)?,
-                estimated_cost_usd: row.get(10)?,
-                error: row.get(11)?,
-                updated_at: row.get(12)?,
+                error: row.get(10)?,
+                updated_at: row.get(11)?,
             })
         })
         .map_err(string_error)?
@@ -323,17 +319,13 @@ pub(crate) async fn extract_transcription_chunk(
 
 #[tauri::command]
 pub(crate) async fn transcribe_audio_chunk(
+    app: AppHandle,
     state: State<'_, AppState>,
     project_id: String,
     clip_id: String,
     chunk_index: i64,
-    access_token: String,
-    reservation_id: String,
-    estimated_cost_usd: f64,
+    contextual_terms: Vec<String>,
 ) -> Result<TranscriptChunkPayload, String> {
-    if access_token.trim().is_empty() {
-        return Err("Deepgram access token is missing.".to_string());
-    }
     let chunk = transcription_chunk(&state, &project_id, &clip_id, chunk_index)?
         .ok_or_else(|| "Prepare the clip for transcription first.".to_string())?;
     if matches!(chunk.stage.as_str(), "syncing" | "complete") {
@@ -363,114 +355,42 @@ pub(crate) async fn transcribe_audio_chunk(
             .execute(
                 "
                 UPDATE transcription_jobs
-                SET stage = 'transcribing', reservation_id = ?1,
-                    estimated_cost_usd = ?2, error = NULL, updated_at = ?3
-                WHERE project_id = ?4 AND clip_id = ?5 AND chunk_index = ?6
+                SET stage = 'transcribing', attempt_count = attempt_count + 1,
+                    error = NULL, updated_at = ?1
+                WHERE project_id = ?2 AND clip_id = ?3 AND chunk_index = ?4
                 ",
-                params![
-                    reservation_id,
-                    estimated_cost_usd.max(0.0),
-                    now(),
-                    project_id,
-                    clip_id,
-                    chunk_index,
-                ],
+                params![now(), project_id, clip_id, chunk_index],
             )
             .map_err(string_error)?;
     }
 
-    let audio = std::fs::read(&audio_path).map_err(string_error)?;
-    let client = reqwest::Client::builder()
-        .connect_timeout(Duration::from_secs(30))
-        .timeout(Duration::from_secs(30 * 60))
-        .build()
-        .map_err(string_error)?;
-    let request = client
-        .post(format!("{DEEPGRAM_API_BASE}/v1/listen"))
-        .bearer_auth(access_token)
-        .header(CONTENT_TYPE, "audio/mp4")
-        .query(&[
-            ("model", "nova-3"),
-            ("language", "en"),
-            ("smart_format", "true"),
-            ("utterances", "true"),
-            ("diarize_model", "latest"),
-            ("mip_opt_out", "true"),
-        ])
-        .body(audio)
-        .send()
-        .await;
-
-    let response = match request {
-        Ok(response) => response,
+    let transcription = match transcribe_audio(
+        &app,
+        Path::new(&audio_path),
+        "en-US",
+        &contextual_terms,
+    )
+    .await
+    {
+        Ok(transcription) => transcription,
         Err(error) => {
-            let message = format!("Deepgram request failed: {error}");
             update_transcription_job(
                 &state,
                 &project_id,
                 &clip_id,
                 chunk_index,
                 "failed",
-                Some(&message),
+                Some(&error),
             )?;
-            return Err(message);
+            return Err(error);
         }
     };
-    let status = response.status();
-    let response_body = match response.bytes().await {
-        Ok(body) => body,
-        Err(error) => {
-            let message = format!("Deepgram response could not be read: {error}");
-            update_transcription_job(
-                &state,
-                &project_id,
-                &clip_id,
-                chunk_index,
-                "failed",
-                Some(&message),
-            )?;
-            return Err(message);
-        }
-    };
-    if !status.is_success() {
-        let provider_message = String::from_utf8_lossy(&response_body);
-        let message = format!(
-            "Deepgram returned {}: {}",
-            status.as_u16(),
-            provider_message.trim()
-        );
-        update_transcription_job(
-            &state,
-            &project_id,
-            &clip_id,
-            chunk_index,
-            "failed",
-            Some(&message),
-        )?;
-        return Err(message);
-    }
-
-    let provider_response: DeepgramResponse = match serde_json::from_slice(&response_body) {
-        Ok(response) => response,
-        Err(error) => {
-            let message = format!("Deepgram returned an unreadable transcription: {error}");
-            update_transcription_job(
-                &state,
-                &project_id,
-                &clip_id,
-                chunk_index,
-                "failed",
-                Some(&message),
-            )?;
-            return Err(message);
-        }
-    };
-    let saved = save_deepgram_transcript(
+    let saved = save_apple_transcript(
         &state,
         &project_id,
         &clip_id,
         chunk_index,
-        provider_response,
+        transcription,
     );
     if let Err(error) = &saved {
         let _ = update_transcription_job(

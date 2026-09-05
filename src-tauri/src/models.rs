@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::PathBuf};
+use std::path::PathBuf;
 
 #[derive(Clone)]
 pub(crate) struct AppState {
@@ -85,13 +85,40 @@ pub(crate) struct ImportProgress {
 
 pub(crate) const TRANSCRIPTION_CHUNK_DURATION_MS: i64 = 30 * 60 * 1_000;
 pub(crate) const VISUAL_MOMENT_DURATION_MS: i64 = 15 * 1_000;
-pub(crate) const DEEPGRAM_API_BASE: &str = "https://api.deepgram.com";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct WorkerAudioExtraction {
     pub(crate) duration_ms: i64,
     pub(crate) file_size_bytes: i64,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkerSpeechTranscription {
+    pub(crate) locale: String,
+    pub(crate) model: String,
+    pub(crate) model_version: String,
+    pub(crate) segments: Vec<WorkerSpeechSegment>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkerSpeechSegment {
+    pub(crate) text: String,
+    pub(crate) start_ms: i64,
+    pub(crate) end_ms: i64,
+    pub(crate) confidence: f64,
+    pub(crate) words: Vec<WorkerSpeechWord>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WorkerSpeechWord {
+    pub(crate) text: String,
+    pub(crate) start_ms: i64,
+    pub(crate) end_ms: i64,
+    pub(crate) confidence: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -167,11 +194,10 @@ pub(crate) struct TranscriptionChunk {
     pub(crate) duration_ms: i64,
     pub(crate) stage: String,
     pub(crate) attempt_count: i64,
-    pub(crate) reservation_id: Option<String>,
-    pub(crate) deepgram_request_id: Option<String>,
+    pub(crate) transcription_id: Option<String>,
     pub(crate) model: Option<String>,
     pub(crate) model_version: Option<String>,
-    pub(crate) estimated_cost_usd: f64,
+    pub(crate) language: Option<String>,
     pub(crate) error: Option<String>,
     pub(crate) updated_at: String,
 }
@@ -184,7 +210,6 @@ pub(crate) struct ClipTranscriptSummary {
     pub(crate) total_chunks: i64,
     pub(crate) completed_chunks: i64,
     pub(crate) utterance_count: i64,
-    pub(crate) estimated_cost_usd: f64,
     pub(crate) error: Option<String>,
     pub(crate) updated_at: Option<String>,
 }
@@ -253,77 +278,4 @@ pub(crate) struct TranscriptSearchMatch {
     pub(crate) end_ms: i64,
     pub(crate) speaker: Option<i64>,
     pub(crate) text: String,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeepgramResponse {
-    pub(crate) metadata: DeepgramMetadata,
-    #[serde(default)]
-    pub(crate) results: DeepgramResults,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeepgramMetadata {
-    pub(crate) request_id: String,
-    #[serde(default)]
-    pub(crate) models: Vec<String>,
-    #[serde(default)]
-    pub(crate) model_info: HashMap<String, DeepgramModelInfo>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeepgramModelInfo {
-    pub(crate) name: Option<String>,
-    pub(crate) version: Option<String>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-pub(crate) struct DeepgramResults {
-    #[serde(default)]
-    pub(crate) channels: Vec<DeepgramChannel>,
-    #[serde(default)]
-    pub(crate) utterances: Vec<DeepgramUtterance>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeepgramChannel {
-    #[serde(default)]
-    pub(crate) alternatives: Vec<DeepgramAlternative>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeepgramAlternative {
-    #[serde(default)]
-    pub(crate) transcript: String,
-    #[serde(default)]
-    pub(crate) confidence: f64,
-    #[serde(default)]
-    pub(crate) words: Vec<DeepgramWord>,
-}
-
-#[derive(Debug, Deserialize)]
-pub(crate) struct DeepgramUtterance {
-    pub(crate) id: Option<String>,
-    pub(crate) start: f64,
-    pub(crate) end: f64,
-    #[serde(default)]
-    pub(crate) confidence: f64,
-    #[serde(default)]
-    pub(crate) transcript: String,
-    pub(crate) speaker: Option<i64>,
-    #[serde(default)]
-    pub(crate) words: Vec<DeepgramWord>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-pub(crate) struct DeepgramWord {
-    #[serde(default)]
-    pub(crate) word: String,
-    pub(crate) punctuated_word: Option<String>,
-    pub(crate) start: f64,
-    pub(crate) end: f64,
-    #[serde(default)]
-    pub(crate) confidence: f64,
-    pub(crate) speaker: Option<i64>,
-    pub(crate) speaker_confidence: Option<f64>,
 }

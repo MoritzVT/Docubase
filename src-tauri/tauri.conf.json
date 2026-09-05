@@ -32,7 +32,7 @@
     "targets": ["app", "dmg"],
     "externalBin": ["binaries/media-worker"],
     "macOS": {
-      "minimumSystemVersion": "13.0"
+      "minimumSystemVersion": "26.0"
     }
   }
 }

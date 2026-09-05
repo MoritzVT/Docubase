@@ -11,13 +11,9 @@ export const database = getFirestore("default");
 export const bucket = getStorage().bucket(
   process.env.STORAGE_BUCKET ?? "docubase-455a4.firebasestorage.app",
 );
-export const deepgramApiKey = defineSecret("DEEPGRAM_API_KEY");
 export const geminiApiKey = defineSecret("GEMINI_API_KEY");
 
 export const REGION = "us-central1";
-export const CHUNK_DURATION_MS = 30 * 60 * 1_000;
-export const DEEPGRAM_USD_PER_MINUTE = 0.0048 + 0.002;
-export const TOKEN_TTL_SECONDS = 5 * 60;
 export const GEMINI_MODEL = "gemini-3.5-flash-lite";
 export const GEMINI_BATCH_INPUT_USD_PER_MILLION = 0.15;
 export const GEMINI_BATCH_OUTPUT_USD_PER_MILLION = 1.25;
@@ -54,16 +50,8 @@ export const INTERVIEW_ROUTING = {
 export interface UsageTotals {
   actualUsd: number;
   reservedUsd: number;
-  deepgramActualUsd: number;
-  deepgramReservedUsd: number;
   geminiActualUsd: number;
   geminiReservedUsd: number;
-}
-
-export interface ReservationResult {
-  reservationId: string;
-  estimatedCostUsd: number;
-  alreadyCompleted: boolean;
 }
 
 export interface VisualFrameRecord {
@@ -231,18 +219,6 @@ export function requireId(value: unknown, field: string): string {
   return value;
 }
 
-export function requireChunkIndex(value: unknown): number {
-  if (
-    typeof value !== "number" ||
-    !Number.isInteger(value) ||
-    value < 0 ||
-    value > 100_000
-  ) {
-    throw new HttpsError("invalid-argument", "chunkIndex is invalid.");
-  }
-  return value;
-}
-
 export function requireMember(
   project: FirebaseFirestore.DocumentData | undefined,
   userId: string,
@@ -353,12 +329,6 @@ export function usageTotals(value: unknown): UsageTotals {
   return {
     actualUsd: roundUsd(Math.max(0, numeric(usage.actualUsd))),
     reservedUsd: roundUsd(Math.max(0, numeric(usage.reservedUsd))),
-    deepgramActualUsd: roundUsd(
-      Math.max(0, numeric(usage.deepgramActualUsd)),
-    ),
-    deepgramReservedUsd: roundUsd(
-      Math.max(0, numeric(usage.deepgramReservedUsd)),
-    ),
     geminiActualUsd: roundUsd(
       Math.max(0, numeric(usage.geminiActualUsd)),
     ),
@@ -370,10 +340,6 @@ export function usageTotals(value: unknown): UsageTotals {
 
 export function numeric(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
-}
-
-export function estimateTranscriptionCost(durationMs: number): number {
-  return roundUsd((durationMs / 60_000) * DEEPGRAM_USD_PER_MINUTE);
 }
 
 export function roundUsd(value: number): number {

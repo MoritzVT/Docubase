@@ -146,18 +146,14 @@ export async function transcribeAudioChunk(
   projectId: string,
   clipId: string,
   chunkIndex: number,
-  accessToken: string,
-  reservationId: string,
-  estimatedCostUsd: number,
+  contextualTerms: string[],
 ): Promise<TranscriptChunkPayload> {
   if (!isTauri) throw new Error("Transcription requires the desktop app.");
   return invoke("transcribe_audio_chunk", {
     projectId,
     clipId,
     chunkIndex,
-    accessToken,
-    reservationId,
-    estimatedCostUsd,
+    contextualTerms,
   });
 }
 

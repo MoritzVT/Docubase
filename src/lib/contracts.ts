@@ -134,11 +134,10 @@ export const TranscriptionChunkSchema = z.object({
   durationMs: z.number().int().positive(),
   stage: TranscriptionStageSchema,
   attemptCount: z.number().int().nonnegative(),
-  reservationId: z.string().nullable(),
-  deepgramRequestId: z.string().nullable(),
+  transcriptionId: z.string().nullable(),
   model: z.string().nullable(),
   modelVersion: z.string().nullable(),
-  estimatedCostUsd: z.number().nonnegative(),
+  language: z.string().nullable(),
   error: z.string().nullable(),
   updatedAt: z.string().datetime(),
 });
@@ -150,7 +149,6 @@ export const ClipTranscriptSummarySchema = z.object({
   totalChunks: z.number().int().nonnegative(),
   completedChunks: z.number().int().nonnegative(),
   utteranceCount: z.number().int().nonnegative(),
-  estimatedCostUsd: z.number().nonnegative(),
   error: z.string().nullable(),
   updatedAt: z.string().datetime().nullable(),
 });
@@ -354,20 +352,6 @@ export const VisualAnalysisJobSchema = z.object({
 export type VisualAnalysisJob = z.infer<
   typeof VisualAnalysisJobSchema
 >;
-
-export interface BeginTranscriptionResponse {
-  accessToken: string | null;
-  expiresIn: number;
-  reservationId: string;
-  estimatedCostUsd: number;
-  alreadyCompleted: boolean;
-}
-
-export interface CompleteTranscriptionResponse {
-  actualCostUsd: number;
-  projectActualUsd: number;
-  projectReservedUsd: number;
-}
 
 export interface SubmitVisualAnalysisResponse {
   jobId: string;

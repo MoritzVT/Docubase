@@ -9,7 +9,6 @@ export interface VisualBudgetInput {
   projectDurationMs: number;
   projectClipCount: number;
   budgetPerFootageHour: number;
-  deepgramUsdPerMinute: number;
   geminiActualUsd: number;
   geminiReservedUsd: number;
 }
@@ -25,11 +24,7 @@ export function calculateVisualBudget(input: VisualBudgetInput): VisualBudget {
   const projectDurationMs = nonNegative(input.projectDurationMs);
   const projectClipCount = Math.floor(nonNegative(input.projectClipCount));
   const budgetPerFootageHour = nonNegative(input.budgetPerFootageHour);
-  const deepgramPerHour = nonNegative(input.deepgramUsdPerMinute) * 60;
-  const visualAllowancePerHour = Math.max(
-    0,
-    budgetPerFootageHour - deepgramPerHour,
-  );
+  const visualAllowancePerHour = budgetPerFootageHour;
   const durationBasedBudget =
     (projectDurationMs / (60 * 60 * 1_000)) * visualAllowancePerHour;
   const workloadBasedBudget =

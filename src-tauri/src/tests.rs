@@ -4,10 +4,12 @@ use rusqlite::{params, Connection};
 
 use crate::catalog::{is_supported_video, sampled_fingerprint};
 use crate::database::{connection, initialize_database};
-use crate::models::{AppState, DeepgramResponse};
+use crate::models::{
+    AppState, WorkerSpeechSegment, WorkerSpeechTranscription, WorkerSpeechWord,
+};
 use crate::projects::delete_local_project_inner;
 use crate::transcription::{
-    save_deepgram_transcript, transcript_chunk_payload_inner, transcription_chunk,
+    save_apple_transcript, transcript_chunk_payload_inner, transcription_chunk,
     transcription_chunk_ranges,
 };
 use crate::utilities::now;
@@ -59,44 +61,6 @@ fn transcription_chunks_are_capped_at_thirty_minutes() {
             (60 * 60 * 1_000, 60 * 1_000),
         ]
     );
-}
-
-#[test]
-fn deepgram_utterance_response_deserializes() {
-    let response: DeepgramResponse = serde_json::from_str(
-        r#"{
-            "metadata": {
-                "request_id": "request-a",
-                "models": ["model-a"],
-                "model_info": {
-                    "model-a": {"name": "nova-3", "version": "2026-05-01"}
-                }
-            },
-            "results": {
-                "utterances": [{
-                    "id": "utterance-a",
-                    "start": 0.1,
-                    "end": 1.2,
-                    "confidence": 0.98,
-                    "transcript": "A test.",
-                    "speaker": 0,
-                    "words": [{
-                        "word": "test",
-                        "punctuated_word": "test.",
-                        "start": 0.5,
-                        "end": 1.2,
-                        "confidence": 0.99,
-                        "speaker": 0,
-                        "speaker_confidence": 0.97
-                    }]
-                }]
-            }
-        }"#,
-    )
-    .unwrap();
-    assert_eq!(response.metadata.request_id, "request-a");
-    assert_eq!(response.results.utterances.len(), 1);
-    assert_eq!(response.results.utterances[0].speaker, Some(0));
 }
 
 #[test]
@@ -339,12 +303,10 @@ fn saved_transcript_is_resumable_with_absolute_clip_timestamps() {
             "
             INSERT INTO transcription_jobs (
                 project_id, clip_id, chunk_index, start_ms, duration_ms,
-                audio_path, stage, attempt_count, reservation_id,
-                estimated_cost_usd, created_at, updated_at
+                audio_path, stage, attempt_count, created_at, updated_at
             ) VALUES (
                 'project-a', 'clip-a', 1, 1800000, 1800000,
-                '/tmp/chunk.m4a', 'transcribing', 1, 'reservation-a',
-                0.204, ?1, ?1
+                '/tmp/chunk.m4a', 'transcribing', 1, ?1, ?1
             )
             ",
             params![timestamp],
@@ -352,43 +314,31 @@ fn saved_transcript_is_resumable_with_absolute_clip_timestamps() {
         .unwrap();
     drop(connection);
 
-    let response: DeepgramResponse = serde_json::from_str(
-        r#"{
-            "metadata": {
-                "request_id": "request-a",
-                "models": ["model-a"],
-                "model_info": {
-                    "model-a": {"name": "nova-3", "version": "2026-05-01"}
-                }
-            },
-            "results": {
-                "utterances": [{
-                    "start": 1.25,
-                    "end": 2.5,
-                    "confidence": 0.98,
-                    "transcript": "Resume from here.",
-                    "speaker": 1,
-                    "words": [{
-                        "word": "Resume",
-                        "punctuated_word": "Resume",
-                        "start": 1.25,
-                        "end": 1.75,
-                        "confidence": 0.99,
-                        "speaker": 1
-                    }]
-                }]
-            }
-        }"#,
-    )
-    .unwrap();
-    let payload = save_deepgram_transcript(&state, "project-a", "clip-a", 1, response).unwrap();
+    let response = WorkerSpeechTranscription {
+        locale: "en-US".to_string(),
+        model: "Apple SpeechTranscriber".to_string(),
+        model_version: "macOS 26".to_string(),
+        segments: vec![WorkerSpeechSegment {
+            text: "Resume from here.".to_string(),
+            start_ms: 1_250,
+            end_ms: 2_500,
+            confidence: 0.98,
+            words: vec![WorkerSpeechWord {
+                text: "Resume".to_string(),
+                start_ms: 1_250,
+                end_ms: 1_750,
+                confidence: 0.99,
+            }],
+        }],
+    };
+    let payload = save_apple_transcript(&state, "project-a", "clip-a", 1, response).unwrap();
 
-    assert_eq!(payload.chunk.request_id, "request-a");
+    assert!(payload.chunk.request_id.starts_with("local-"));
     assert_eq!(payload.utterances.len(), 1);
     assert_eq!(payload.utterances[0].start_ms, 1_801_250);
     assert_eq!(payload.utterances[0].words[0].start_ms, 1_801_250);
     let resumed = transcript_chunk_payload_inner(&state, "project-a", "clip-a", 1).unwrap();
-    assert_eq!(resumed.chunk.request_id, "request-a");
+    assert_eq!(resumed.chunk.request_id, payload.chunk.request_id);
     assert_eq!(resumed.utterances[0].text, "Resume from here.");
     assert_eq!(
         transcription_chunk(&state, "project-a", "clip-a", 1)

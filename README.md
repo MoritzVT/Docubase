@@ -1,8 +1,8 @@
 # Docubase
 
 Docubase is a local-first macOS catalog, transcript finder, and visual index for
-documentary footage. It indexes camera files in place, sends temporary
-compressed audio directly to Deepgram, and uses Gemini Batch only for
+documentary footage. It indexes camera files in place, transcribes temporary
+audio locally with Apple Speech, and uses Gemini Batch only for
 editor-approved retained thumbnails and complete timestamped transcripts. The
 two evidence sources are analyzed independently before a deterministic merge. Source
 video, absolute paths, poster files, and audio are never stored in Firebase.
@@ -27,22 +27,17 @@ The next analysis-quality refinement is specified in
 ## Goal 2 features
 
 - Resumable local extraction of 30-minute, 16 kHz mono AAC chunks.
-- Direct transcription with Deepgram Nova-3, utterance and word timestamps,
-  smart formatting, and speaker diarization.
-- Short-lived Deepgram credentials minted by an authenticated Firebase
-  callable; the permanent provider key never reaches the desktop app.
-- Server-side membership, duration, budget, and usage validation before each
-  provider request.
-- Idempotent cost reservations and usage events at an estimated $0.0068 per
-  footage minute ($0.408 per hour).
+- On-device Apple Speech transcription with utterance and word timestamps.
+- Project names and terminology are supplied as local contextual vocabulary.
+- No transcription provider credentials, audio upload, or provider charge.
 - Local SQLite transcript storage plus member-protected transcript sync to
   Firestore.
-- Expandable transcript rows, speaker labels, timecodes, highlighted spoken-word
-  search, per-clip retry, and a preflight cost confirmation.
+- Expandable transcript rows, timecodes, highlighted spoken-word search,
+  per-clip retry, and a local-processing confirmation.
 - Interruption recovery that reuses an extracted chunk or resumes its Firestore
   sync without repeating already completed chunks.
-- Automatic deletion of each temporary audio chunk after its transcript and
-  usage record have both been committed.
+- Automatic deletion of each temporary audio chunk after its transcript has
+  been committed.
 
 ## Goal 3 and 3.1 features
 
@@ -84,7 +79,7 @@ The next analysis-quality refinement is specified in
 
 ## Prerequisites
 
-- macOS 13 or newer.
+- macOS 26 or newer on Apple silicon.
 - Xcode Command Line Tools.
 - Swift 6 or newer.
 - Rust stable.
@@ -104,16 +99,6 @@ export PATH="/opt/homebrew/opt/node@24/bin:$HOME/.cargo/bin:/opt/homebrew/opt/ru
 The Firebase project is `docubase-455a4`. Copy `.env.example` to `.env.local`
 and fill it with the Firebase web-app SDK values. Enable Email/Password in
 Firebase Authentication.
-
-The Deepgram permanent API key belongs in Google Secret Manager, not
-`.env.local`. The key must use Deepgram's **Member** role or higher because
-temporary token grants are not available to narrower keys. Set it once from a
-private terminal prompt:
-
-```sh
-npx firebase functions:secrets:set DEEPGRAM_API_KEY \
-  --project docubase-455a4
-```
 
 Goal 3 also requires the one-time Firebase Storage setup. In the
 [Firebase Storage console](https://console.firebase.google.com/project/docubase-455a4/storage),
@@ -158,8 +143,8 @@ npm run tauri:dev
 `tauri:dev` builds and bundles the native media worker before starting the app.
 Use **New project**, then **Import folder**. Import reads files where they are;
 it does not copy or upload them. Use **Transcribe footage** to review the
-remaining duration and estimated cost before any paid request. The desktop app
-must remain open while it extracts and uploads local audio.
+remaining duration before local processing. The desktop app must remain open
+while Apple Speech transcribes the temporary audio chunks.
 
 Use **1. Transcribe footage** and **2. Generate clip images** to prepare the two
 evidence sources independently. Image generation is free and local. Once both
@@ -191,20 +176,14 @@ touching original footage.
 1. The app divides an audio-bearing clip into deterministic 30-minute jobs in
    local SQLite.
 2. AVFoundation writes one 16 kHz mono AAC `.m4a` chunk to the application cache.
-3. An authenticated callable validates membership, expected duration, and the
-   project's per-hour budget, then atomically reserves the estimated cost and
-   returns a five-minute Deepgram token.
-4. The desktop process uploads the temporary chunk directly to Deepgram. Original
-   video never enters the request or Firebase.
-5. Normalized utterances and words are saved locally, synced to Firestore, and
-   the reserved usage is finalized.
-6. The local `.m4a` is deleted. If the app stops earlier, the job resumes from
+3. Apple SpeechAnalyzer transcribes that chunk entirely on the Mac, using the
+   project's known names and terminology as contextual vocabulary.
+4. Normalized utterances and words are saved locally and synced to Firestore.
+5. The local `.m4a` is deleted. If the app stops earlier, the job resumes from
    its last durable stage.
 
-A provider request that succeeds immediately before an unexpected process or
-machine failure is the one unavoidable retry boundary: because the provider has
-already received the audio but the local response may not yet be durable, that
-single chunk can require a paid retry.
+The 30-minute boundaries keep long clips restartable. A retry can reuse an
+already-extracted local chunk, and never creates a transcription API charge.
 
 ## Visual data flow and cost
 
