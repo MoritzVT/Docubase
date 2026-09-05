@@ -424,14 +424,20 @@ export function CatalogScreen({
             <Images className="pulse" size={17} />
             <span>{analysisProgress.label}</span>
           </div>
-          <strong>{analysisProgress.percent}%</strong>
-          <progress max={100} value={analysisProgress.percent} />
+          <strong>
+            {analysisProgress.percent}% complete · {100 - analysisProgress.percent}% left
+          </strong>
+          <progress
+            aria-label={`${analysisProgress.percent}% of AI analysis complete`}
+            max={100}
+            value={analysisProgress.percent}
+          />
           <small>
             {analysisProgress.activeClipCount} clip
-            {analysisProgress.activeClipCount === 1 ? " is" : "s are"} in AI
-            analysis; {analysisProgress.readyClipCount} of {analysisProgress.totalClipCount}
-            {" "}clip descriptions are ready. This is stage progress, not a time
-            estimate, and it checks for updates automatically.
+            {analysisProgress.activeClipCount === 1 ? " is" : "s are"} still in
+            AI analysis. {analysisProgress.readyClipCount} of {analysisProgress.totalClipCount}
+            {" "}tracked clip descriptions are finished. Progress is based on
+            completed pipeline stages and refreshes automatically.
           </small>
         </div>
       )}

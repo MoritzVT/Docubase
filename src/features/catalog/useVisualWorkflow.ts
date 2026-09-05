@@ -112,8 +112,10 @@ export function useVisualWorkflow(
         Object.fromEntries(metadata.map((item) => [item.clipId, item])),
       );
       setVisualJobs(jobs);
+      return { summaries, metadata, jobs };
     } catch (error) {
       setNotice({ tone: "error", message: readableError(error) });
+      return null;
     }
   }, [project.id]);
 
@@ -318,7 +320,7 @@ export function useVisualWorkflow(
     setVisualPreflight(null);
     setNotice(null);
     let activeClipId: string | null = null;
-    let unfinishedFastClipCount = 0;
+    const submittedJobIds: string[] = [];
     try {
       const latestSummaries = Object.fromEntries(
         (await listVisualSummaries(project.id)).map((summary) => [
@@ -379,29 +381,56 @@ export function useVisualWorkflow(
               latestSummaries[clip.id]?.maximumChangeScore ?? 1,
           },
         });
+        submittedJobIds.push(submission.jobId);
         await setVisualClipStage(project.id, clip.id, "batched", {
           batchJobId: submission.jobId,
           estimatedCostUsd: submission.estimatedCostUsd,
         });
         if (analysisMode === "fast") {
-          const result = await collectVisualJob(submission.jobId, clip.id);
-          if (!result.completed) unfinishedFastClipCount += 1;
+          await collectVisualJob(submission.jobId, clip.id);
         }
       }
-      await refreshVisualState();
-      setNotice({
-        tone: "success",
-        message:
-          analysisMode === "fast"
-            ? unfinishedFastClipCount === 0
-              ? `Fast analysis finished. Descriptions and tags are ready for ${
-                  preflight.clips.length
-                } clip${preflight.clips.length === 1 ? "" : "s"}.`
-              : `Fast analysis is still running for ${unfinishedFastClipCount} clip${
-                  unfinishedFastClipCount === 1 ? "" : "s"
-                }. Progress will update automatically.`
-            : "AI analysis submitted. It can finish while Docubase is closed; progress will refresh automatically while the app is open.",
-      });
+      const refreshed = await refreshVisualState();
+      if (!refreshed) {
+        throw new Error("Docubase could not read the submitted analysis jobs.");
+      }
+      const submittedJobs = submittedJobIds.map((jobId) =>
+        refreshed.jobs.find((job) => job.id === jobId),
+      );
+      const completedCount = submittedJobs.filter(
+        (job) => job?.state === "complete" || job?.phase === "complete",
+      ).length;
+      const failedCount = submittedJobs.filter(
+        (job) => job?.state === "partial" || job?.state === "failed",
+      ).length;
+      const remainingCount = Math.max(
+        0,
+        submittedJobIds.length - completedCount - failedCount,
+      );
+      if (failedCount > 0) {
+        setNotice({
+          tone: "error",
+          message: `AI analysis stopped: ${failedCount} clip${
+            failedCount === 1 ? "" : "s"
+          } failed, ${completedCount} finished, and ${remainingCount} remain in progress.`,
+        });
+      } else if (remainingCount > 0) {
+        setNotice({
+          tone: "warning",
+          message: `AI analysis is in progress: ${completedCount} of ${
+            submittedJobIds.length
+          } clip${submittedJobIds.length === 1 ? "" : "s"} finished; ${
+            remainingCount
+          } remaining.`,
+        });
+      } else {
+        setNotice({
+          tone: "success",
+          message: `AI analysis finished. Descriptions and tags are ready for ${
+            completedCount
+          } clip${completedCount === 1 ? "" : "s"}.`,
+        });
+      }
     } catch (error) {
       if (activeClipId) {
         await setVisualClipStage(
@@ -469,6 +498,9 @@ export function useVisualWorkflow(
       setVisualProgress("Checking AI analysis jobs…");
     }
     const errors: string[] = [];
+    let completedCount = 0;
+    let failedCount = 0;
+    let remainingCount = 0;
     try {
       const pendingJobs = visualJobs.filter((job) =>
         visualJobNeedsRefresh(job),
@@ -477,7 +509,14 @@ export function useVisualWorkflow(
         if (job.clipId) {
           try {
             setVisualWorkingClipId(job.clipId);
-            await collectVisualJob(job.id, job.clipId);
+            const result = await collectVisualJob(job.id, job.clipId);
+            if (result.completed) {
+              completedCount += 1;
+            } else if (result.state === "partial" || result.state === "failed") {
+              failedCount += 1;
+            } else {
+              remainingCount += 1;
+            }
           } catch (error) {
             const message = readableError(error);
             errors.push(message);
@@ -496,13 +535,33 @@ export function useVisualWorkflow(
             ? errors[0]
             : `${errors.length} clips could not be refreshed. ${errors[0]}`,
         });
+      } else if (failedCount > 0) {
+        setNotice({
+          tone: "error",
+          message: `AI analysis stopped: ${failedCount} clip${
+            failedCount === 1 ? "" : "s"
+          } failed, ${completedCount} finished, and ${remainingCount} remain in progress.`,
+        });
+      } else if (remainingCount > 0) {
+        setNotice({
+          tone: "warning",
+          message: `AI analysis is in progress: ${completedCount} of ${
+            pendingJobs.length
+          } currently active clip${pendingJobs.length === 1 ? "" : "s"} finished; ${
+            remainingCount
+          } remaining.`,
+        });
+      } else if (completedCount > 0) {
+        setNotice({
+          tone: "success",
+          message: `AI analysis finished. Descriptions and tags are ready for ${
+            completedCount
+          } clip${completedCount === 1 ? "" : "s"}.`,
+        });
       } else if (!silent) {
         setNotice({
           tone: "success",
-          message:
-            pendingJobs.length === 0
-              ? "There are no pending AI analysis jobs."
-              : "AI analysis status refreshed.",
+          message: "There are no AI analysis jobs in progress.",
         });
       }
     } catch (error) {
@@ -566,22 +625,33 @@ export function useVisualWorkflow(
   const leastAdvancedStage = [...activeStages].sort(
     (left, right) => left.percent - right.percent,
   )[0];
+  const latestTrackedJobByClip = new Map<string, VisualAnalysisJob>();
+  for (const job of visualJobs) {
+    if (
+      job.clipId &&
+      job.analysisVersion === "4" &&
+      !latestTrackedJobByClip.has(job.clipId) &&
+      (visualJobIsActive(job) || job.state === "complete")
+    ) {
+      latestTrackedJobByClip.set(job.clipId, job);
+    }
+  }
+  const trackedJobs = [...latestTrackedJobByClip.values()];
+  const trackedStages = trackedJobs.map(visualAnalysisProgressStage);
   const analysisProgress = leastAdvancedStage
     ? {
         percent: Math.round(
-          activeStages.reduce((total, stage) => total + stage.percent, 0) /
-            activeStages.length,
+          trackedStages.reduce((total, stage) => total + stage.percent, 0) /
+            trackedStages.length,
         ),
         label: leastAdvancedStage.label,
         activeClipCount: new Set(
           activeVisualJobs.flatMap((job) => job.clipId ? [job.clipId] : []),
         ).size,
-        readyClipCount: clips.filter(
-          (clip) =>
-            visualMetadata[clip.id]?.visualStage === "complete" &&
-            visualMetadata[clip.id]?.analysisVersion === "4",
+        readyClipCount: trackedJobs.filter(
+          (job) => job.state === "complete" || job.phase === "complete",
         ).length,
-        totalClipCount: clips.length,
+        totalClipCount: trackedJobs.length,
       }
     : null;
   const recordedVisualCost = visualJobs.reduce(
