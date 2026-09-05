@@ -33,31 +33,40 @@ flowchart LR
 - Use Nova-3 English with word timestamps, utterances, smart formatting, and diarization. Project-specific paid keyterm prompting remains off by default and is shown as an optional cost increase.
 - Scan locally at roughly one low-resolution frame per second. Within each five-second bucket, retain the frame with the strongest visual change, skip near-duplicates, and force at least one frame every 30 seconds. This caps retention at 12 frames per minute while preserving more shot changes than fixed 30-second sampling.
 - Group retained frames chronologically into approximately 15-second visual moments. Keep individual timestamps and images so results can point to an exact frame.
-- Detect and crop faces locally. Generate Apple Vision feature prints and form tentative similarity clusters; never upload feature prints. Model- or transcript-inferred names remain suggestions until the editor confirms or corrects them.
+- Do not perform face detection or face clustering in Goal 3. Character names in
+  clip analysis may come only from transcript evidence, the project brief, or
+  editor-provided known names. Appearance-based identity work is deferred.
 
 ### Firebase and AI pipeline
 
 - Deploy Firebase Authentication, Storage, Cloud Functions 2nd gen, Cloud Tasks, and Firestore Enterprise in `us-central1`. Use email/password authentication initially and model project membership as owner, editor, or viewer.
 - Use Firestore Enterprise full-text and vector indexes, while hiding all search-specific queries behind a backend `searchProject` contract. Pipeline operations remain pre-GA, so this boundary allows later replacement without changing either client. [Firestore text search](https://firebase.google.com/docs/firestore/enterprise/text-search), [Enterprise pricing and status](https://firebase.google.com/docs/firestore/enterprise/pricing)
 - Store:
-  - Project brief, known names/terms, members, budget, processing status, topics, storylines, and model versions.
+  - Project brief, known names/terms, members, budget, processing status, and model versions.
   - Clip metadata, description, tags, transcript chunks, and processing stages.
   - Timestamped frames and 15-second moments with evidence, structured facets, and separate text/visual embeddings.
   - Confirmed people and aliases with links to supporting frames, clips, and utterances.
-- Upload only retained JPEG thumbnails and compressed transcript/provider records. Do not provide a Firebase Storage path capable of accepting source video or audio.
-- Analyze chronological frame groups plus nearby transcript text with `gemini-3.5-flash-lite`, using strict structured output for:
+- Upload only retained JPEG thumbnails and compressed transcript/provider
+  records. Because this project uses the named Firestore database `default`
+  rather than `(default)`, Storage rules cannot read its membership documents.
+  Route frame bytes through an authenticated callable that validates membership
+  against the named database, and deny all direct client Storage access.
+- Analyze the complete transcript and chronological visual frame groups in
+  independent `gemini-3.5-flash-lite` Batch requests, using strict structured
+  output for:
   - Setting, weather, time of day, dominant colors, mood, objects, actions, and visible people.
   - Content type such as interview, b-roll, archive, action, or establishing shot.
-  - Speech state such as no speech, single speaker, multiple speakers, or voice-over.
-  - Short moment and clip descriptions with evidence frame/utterance IDs.
+  - Transcript format, central subject, named entities, and spoken keywords.
+  - Short visual-moment and clip descriptions with source-specific evidence IDs.
 - Submit non-urgent image analysis, embedding, clip summaries, and project summaries through Gemini Batch, which costs 50% of interactive requests and targets completion within 24 hours. [Gemini Batch API](https://ai.google.dev/gemini-api/docs/batch-api)
 - Use `gemini-embedding-2` at 768 dimensions:
   - Embed retained images directly for cross-modal visual retrieval.
   - Embed transcript/description text separately.
   - Embed search queries once and compare the same query vector against both indexes.
   - Record embedding model/version so a future model change triggers controlled reindexing. Gemini Embedding 2 supports text and images in one embedding space, with 768 dimensions recommended and comfortably below Firestore’s 2,048-dimension limit. [Gemini embeddings](https://ai.google.dev/gemini-api/docs/embeddings), [Firestore vector limits](https://firebase.google.com/docs/firestore/vector-search)
-- Generate project context hierarchically: moment evidence → clip summaries → project entities/topics/storylines. Context claims must cite moment IDs and remain editable; storyline output is presented as an AI draft rather than fact.
-- Make every stage independently idempotent and resumable: discovered, extracting, transcribing, uploading, analyzing, embedding, context-building, indexed, or failed. Local stages resume when the desktop app reopens; cloud stages continue after derivatives are uploaded.
+- Keep project-wide AI context generation out of the current product. Search and
+  browsing use grounded clip descriptions, tags, moments, and transcripts.
+- Make every stage independently idempotent and resumable: discovered, extracting, transcribing, uploading, analyzing, embedding, indexed, or failed. Local stages resume when the desktop app reopens; cloud stages continue after derivatives are uploaded.
 
 ### Search, editing, and public contracts
 
@@ -68,9 +77,9 @@ flowchart LR
   - Clip ID/name and match reason.
   - Best thumbnail and its precise timestamp.
   - Verbatim stored transcript excerpt and speaker/person attribution when available.
-  - Source timecode or elapsed time.
+  - Embedded recording date plus source timecode or elapsed time in evidence views.
   - Reveal in Finder and Copy Timecode actions.
-- The main project screen is a virtualized clip table with thumbnail, name, duration, description, tags, status, expandable transcript, and editable metadata. A separate People/Context view handles name confirmation, topics, and storyline drafts.
+- The main project screen is a virtualized clip table with thumbnail, name, duration, description, tags, status, expandable transcript, and editable metadata.
 - Preserve raw generated values and provenance while allowing editors to revise transcript utterances, descriptions, tags, people, topics, and storylines. Transcript edits occur at utterance level so start/end timestamps remain intact.
 - Define shared validated contracts for:
   - `ClipManifest`, `IngestEstimate`, `ProcessingStage`, `FrameEvidence`, `TranscriptUtterance`, `IndexedMoment`, and `UsageEvent`.
@@ -161,12 +170,76 @@ Implemented scope:
 
 ### Goal 3 — Visual moments and clip descriptions
 
+Status: implemented and deployed to the `docubase-455a4` Firebase project.
+Firestore and Storage rules are live, the Gemini secret is configured, and the
+Goal 3 callable functions run in `us-central1`.
+
 Add local frame selection/deduplication, retained low-resolution thumbnails,
 15-second moment grouping, Gemini Batch visual analysis, structured facets,
-editable clip descriptions/tags, local-only face clustering suggestions, and
-hierarchical project context drafts. Goal 3 is usable as a browsable visual
-index and accepted only when every generated claim points to stored frame or
-utterance evidence.
+and editable clip descriptions/tags.
+Face clustering is deliberately excluded. Goal 3 is usable as a browsable
+visual index and accepted only when every generated claim points to stored
+frame or utterance evidence.
+
+Implemented scope:
+
+- AVFoundation samples at roughly one frame per second, keeps the strongest
+  change in each five-second bucket, rejects near-duplicates, and forces a
+  frame at least every 30 seconds. Output is orientation-correct, at most
+  384 px, adaptively compressed below 100 KB, and capped at 12 frames/minute.
+- SQLite stores resumable per-clip visual stages and exact frame timestamps.
+  Reopening the app reuses retained frames and already-uploaded objects.
+- A cost dialog is shown after free local extraction and before network work.
+  Only approved retained JPEGs are uploaded; source video remains local.
+- An authenticated callable validates project membership against the named
+  Firestore database, exact object paths, JPEG bytes, frame size, and clip
+  duration before storing each frame. Direct Storage client access is denied.
+- Authenticated analysis functions pool visual allowance across the project's
+  full footage duration, subtract completed and reserved Gemini work, and apply
+  a one-cent floor for tiny projects with fixed Batch overhead before
+  submitting `gemini-3.5-flash-lite` jobs.
+- Every 15-second moment uses strict structured output for description, tags,
+  setting, weather, time of day, colors, mood, objects, actions, people
+  descriptors, content type, and speech state. Output evidence IDs are checked
+  against stored frame and utterance IDs before any result is accepted.
+- Whole-clip descriptions use a separately estimated Batch request with up to
+  eight frames and transcript evidence sampled across the clip. The prompt
+  prioritizes subject matter and editorial context instead of enumerating
+  screenshots, is capped at two sentences/70 words, and rejects transcript
+  quotation, filler, production chatter, and repeated takes. Existing paid jobs
+  receive a free concise topic-and-visual fallback; editors can revise
+  descriptions and tags without a later refresh overwriting their changes.
+- Batch jobs, result collection, and usage reconciliation are idempotent.
+  Partial result collection remains refreshable and reuses the original paid
+  Batch responses without creating a second reservation. Batch response text
+  is read from candidate parts, and legacy alternate-key responses are accepted
+  only after their cited frame IDs pass the normal evidence allowlist.
+- Submission claims are persisted before provider work, each created Batch is
+  checkpointed immediately, terminal failure in one Batch no longer discards
+  successful sibling batches, and the job fingerprint includes the transcript
+  plus analysis version so changed evidence cannot silently reuse stale output.
+- Project owners can permanently delete cloud records, retained thumbnails,
+  and the local catalog/cache after typed-name confirmation. Original footage
+  is excluded, and active Gemini Batch cancellation is attempted first.
+
+### Goal 3.1 — Separate transcript and visual analysis
+
+Status: implemented and deployed to `docubase-455a4`; real-footage calibration
+remains before this milestone is considered production-validated.
+
+Refine Goal 3 before building hybrid search. Analyze the complete transcript in
+an independent transcript pipeline, keep moment analysis strictly visual,
+generate stronger evidence-backed clip keywords, and use one Gemini screenshot
+for confidently detected visually stable interviews. Preserve the adaptive
+visual-moment path for mixed, changing, or uncertain footage. The full
+implementation specification, migration strategy, and acceptance tests are in
+[ANALYSIS_PIPELINE_SPEC.md](./ANALYSIS_PIPELINE_SPEC.md).
+
+Implemented scope includes deterministic full-transcript partitioning,
+transcript-only and visual-only schemas, a one-frame conservative interview
+router driven by AVFoundation stability metrics, deferred upload of remaining
+frames, deterministic description/keyword merging, provenance display,
+editor-override preservation, and legacy Goal 3 rebuild controls.
 
 ### Goal 4 — Grounded hybrid search
 
@@ -180,7 +253,7 @@ latency/relevance targets above.
 ### Goal 5 — Scale, collaboration, and distribution
 
 Add editor/viewer roles, invitations, quotas and alerting, audit history,
-project deletion, App Check enforcement, large-project operational tests,
+App Check enforcement, large-project operational tests,
 observability, signed/notarized universal macOS builds, and a deployment
 runbook. Goal 5 is accepted when a second editor can safely collaborate and the
 app can be distributed outside the development Mac without exposing provider
@@ -190,7 +263,8 @@ credentials or local media.
 
 - The first local build targets the current Apple-silicon Mac, English-language MOV/MP4/ProRes footage, and one under-10-hour validation project.
 - Local unsigned development requires no paid Apple developer membership. Signing and notarization are deferred until distributing the app to other editors.
-- Face clustering produces suggestions only. Off-camera speakers cannot be reliably recognized across clips without future voice clustering.
+- Face clustering is not part of the current product. Off-camera speakers
+  cannot be reliably recognized across clips without future voice clustering.
 - The desktop app must remain open for local extraction and direct Deepgram uploads; Firebase/Gemini processing may continue after it closes.
 - The first milestone excludes Windows, browser access, source-video playback, stored audio proxies, Premiere/Resolve/Final Cut integration, and interchange export. It supports Reveal in Finder and Copy Timecode only.
 - App Check enforcement and a universal signed installer follow the validated vertical slice; authentication, authorization, quotas, and server-side secrets are included immediately.

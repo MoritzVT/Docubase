@@ -14,6 +14,11 @@ import {
   getFunctions,
   type Functions,
 } from "firebase/functions";
+import {
+  connectStorageEmulator,
+  getStorage,
+  type FirebaseStorage,
+} from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -35,6 +40,7 @@ export const firebaseConfigurationError =
 export let auth: Auth | null = null;
 export let db: Firestore | null = null;
 export let functions: Functions | null = null;
+export let storage: FirebaseStorage | null = null;
 
 if (!firebaseConfigurationError) {
   const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
@@ -44,6 +50,7 @@ if (!firebaseConfigurationError) {
     import.meta.env.VITE_FIREBASE_DATABASE_ID || "default",
   );
   functions = getFunctions(app, "us-central1");
+  storage = getStorage(app);
 
   if (
     import.meta.env.VITE_USE_FIREBASE_EMULATORS === "true" &&
@@ -55,6 +62,7 @@ if (!firebaseConfigurationError) {
     });
     connectFirestoreEmulator(db, "127.0.0.1", 8080);
     connectFunctionsEmulator(functions, "127.0.0.1", 5001);
+    connectStorageEmulator(storage, "127.0.0.1", 9199);
     (
       globalThis as { __DOCUBASE_EMULATORS_CONNECTED__?: boolean }
     ).__DOCUBASE_EMULATORS_CONNECTED__ = true;
@@ -80,4 +88,13 @@ export function requireFunctions(): Functions {
     );
   }
   return functions;
+}
+
+export function requireStorage(): FirebaseStorage {
+  if (!storage) {
+    throw new Error(
+      firebaseConfigurationError ?? "Cloud Storage is unavailable.",
+    );
+  }
+  return storage;
 }

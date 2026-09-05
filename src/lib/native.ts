@@ -4,12 +4,15 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type {
   ClipTranscriptSummary,
   ClipManifest,
+  ClipVisualSummary,
   ImportProgress,
   LocalProject,
   TranscriptChunkPayload,
   TranscriptSearchMatch,
   TranscriptUtterance,
   TranscriptionChunk,
+  VisualFrame,
+  VisualStage,
 } from "./contracts";
 
 export const isTauri =
@@ -40,6 +43,11 @@ export async function upsertLocalProject(
 export async function listLocalProjects(): Promise<LocalProject[]> {
   if (!isTauri) return [];
   return invoke("list_local_projects");
+}
+
+export async function deleteLocalProject(projectId: string): Promise<void> {
+  if (!isTauri) return;
+  await invoke("delete_local_project", { projectId });
 }
 
 export async function listLocalClips(
@@ -176,5 +184,78 @@ export async function completeTranscriptionChunk(
     projectId,
     clipId,
     chunkIndex,
+  });
+}
+
+export async function extractVisualIndex(
+  projectId: string,
+  clipId: string,
+): Promise<VisualFrame[]> {
+  if (!isTauri) throw new Error("Visual extraction requires the desktop app.");
+  return invoke("extract_visual_index", { projectId, clipId });
+}
+
+export async function listVisualFrames(
+  projectId: string,
+  clipId: string,
+): Promise<VisualFrame[]> {
+  if (!isTauri) return [];
+  return invoke("list_visual_frames", { projectId, clipId });
+}
+
+export async function listVisualSummaries(
+  projectId: string,
+): Promise<ClipVisualSummary[]> {
+  if (!isTauri) return [];
+  return invoke("list_visual_summaries", { projectId });
+}
+
+export async function readVisualFrame(
+  projectId: string,
+  clipId: string,
+  frameId: string,
+): Promise<Uint8Array> {
+  if (!isTauri) throw new Error("Visual frames require the desktop app.");
+  const bytes = await invoke<number[]>("read_visual_frame", {
+    projectId,
+    clipId,
+    frameId,
+  });
+  return Uint8Array.from(bytes);
+}
+
+export async function markVisualFrameUploaded(
+  projectId: string,
+  clipId: string,
+  frameId: string,
+  storagePath: string,
+): Promise<VisualFrame> {
+  if (!isTauri) throw new Error("Visual upload requires the desktop app.");
+  return invoke("mark_visual_frame_uploaded", {
+    projectId,
+    clipId,
+    frameId,
+    storagePath,
+  });
+}
+
+export async function setVisualClipStage(
+  projectId: string,
+  clipId: string,
+  stage: Exclude<VisualStage, "not_started" | "extracting">,
+  options?: {
+    batchJobId?: string | null;
+    estimatedCostUsd?: number | null;
+    error?: string | null;
+  },
+): Promise<void> {
+  if (!isTauri) return;
+  await invoke("set_visual_clip_stage", {
+    projectId,
+    clipId,
+    stage,
+    batchJobId: options?.batchJobId ?? null,
+    estimatedCostUsd: options?.estimatedCostUsd ?? null,
+    error: options?.error ?? null,
   });
 }

@@ -58,11 +58,47 @@ service cloud.firestore {
 
       match /clips/{clipId} {
         allow read: if isProjectMember(projectId);
-        allow create, update: if isProjectMember(projectId)
+        allow create: if isProjectMember(projectId)
           && request.resource.data.projectId == projectId
           && request.resource.data.id == clipId
           && request.resource.data.posterPath == null
           && hasNoLocalPathFields(request.resource.data);
+        allow update: if isProjectMember(projectId)
+          && request.resource.data.projectId == projectId
+          && request.resource.data.id == clipId
+          && request.resource.data.posterPath == null
+          && hasNoLocalPathFields(request.resource.data)
+          && (!request.resource.data.keys().hasAny(["description"])
+            || (request.resource.data.description is string
+              && request.resource.data.description.size() <= 3000))
+          && (!request.resource.data.keys().hasAny(["tags"])
+            || (request.resource.data.tags is list
+              && request.resource.data.tags.size() <= 40))
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "fingerprint",
+            "filename",
+            "fileExtension",
+            "portableDirectoryHint",
+            "durationMs",
+            "frameRate",
+            "startTimecodeFrames",
+            "recordedAt",
+            "sourceModifiedAt",
+            "width",
+            "height",
+            "videoCodec",
+            "audioCodec",
+            "hasAudio",
+            "fileSizeBytes",
+            "posterPath",
+            "stage",
+            "error",
+            "description",
+            "tags",
+            "visualEditedAt",
+            "visualUpdatedAt",
+            "updatedAt"
+          ]);
         allow delete: if isProjectOwner(projectId);
 
         match /transcriptChunks/{chunkId} {
@@ -84,6 +120,67 @@ service cloud.firestore {
             && hasNoLocalPathFields(request.resource.data);
           allow delete: if isProjectMember(projectId);
         }
+
+        match /visualFrames/{frameId} {
+          allow read: if isProjectMember(projectId);
+          allow create: if isProjectMember(projectId)
+            && request.resource.data.projectId == projectId
+            && request.resource.data.clipId == clipId
+            && request.resource.data.id == frameId
+            && request.resource.data.stage == "ready"
+            && request.resource.data.timestampMs is int
+            && request.resource.data.timestampMs >= 0
+            && request.resource.data.width is int
+            && request.resource.data.width > 0
+            && request.resource.data.width <= 384
+            && request.resource.data.height is int
+            && request.resource.data.height > 0
+            && request.resource.data.height <= 384
+            && request.resource.data.fileSizeBytes is int
+            && request.resource.data.fileSizeBytes > 0
+            && request.resource.data.fileSizeBytes <= 100 * 1024
+            && request.resource.data.storagePath
+              == "projects/" + projectId + "/clips/" + clipId
+                + "/frames/" + frameId + ".jpg"
+            && hasNoLocalPathFields(request.resource.data);
+          allow update: if isProjectMember(projectId)
+            && request.resource.data.projectId == projectId
+            && request.resource.data.clipId == clipId
+            && request.resource.data.id == frameId
+            && request.resource.data.stage == "ready"
+            && request.resource.data.storagePath
+              == "projects/" + projectId + "/clips/" + clipId
+                + "/frames/" + frameId + ".jpg"
+            && hasNoLocalPathFields(request.resource.data)
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "updatedAt"
+            ]);
+          allow delete: if isProjectMember(projectId);
+        }
+
+        match /visualMoments/{momentId} {
+          allow read: if isProjectMember(projectId);
+          allow create: if false;
+          allow update: if isProjectMember(projectId)
+            && request.resource.data.projectId == projectId
+            && request.resource.data.clipId == clipId
+            && request.resource.data.id == momentId
+            && request.resource.data.description is string
+            && request.resource.data.description.size() <= 1000
+            && request.resource.data.tags is list
+            && request.resource.data.tags.size() <= 40
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              "description",
+              "tags",
+              "updatedAt"
+            ]);
+          allow delete: if isProjectOwner(projectId);
+        }
+      }
+
+      match /visualJobs/{jobId} {
+        allow read: if isProjectMember(projectId);
+        allow write: if false;
       }
 
       match /usageEvents/{eventId} {

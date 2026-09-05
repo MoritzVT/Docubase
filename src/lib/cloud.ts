@@ -7,13 +7,24 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
+import { httpsCallable } from "firebase/functions";
 import type {
   ClipManifest,
+  ClipVisualMetadata,
   Project,
   TranscriptChunkPayload,
+  VisualAnalysisJob,
+  VisualFrameDocument,
+  VisualMoment,
+  DeleteProjectResponse,
 } from "./contracts";
-import { ProjectSchema } from "./contracts";
-import { requireDb } from "./firebase";
+import {
+  ClipVisualMetadataSchema,
+  ProjectSchema,
+  VisualAnalysisJobSchema,
+  VisualMomentSchema,
+} from "./contracts";
+import { requireDb, requireFunctions } from "./firebase";
 
 export async function listCloudProjects(userId: string): Promise<Project[]> {
   const snapshot = await getDocs(
@@ -36,6 +47,17 @@ export async function saveProject(project: Project): Promise<void> {
   });
 }
 
+export async function deleteCloudProject(
+  projectId: string,
+  confirmedName: string,
+): Promise<DeleteProjectResponse> {
+  const callable = httpsCallable<
+    { projectId: string; confirmedName: string },
+    DeleteProjectResponse
+  >(requireFunctions(), "deleteProject");
+  return (await callable({ projectId, confirmedName })).data;
+}
+
 export async function syncClipManifests(
   clips: ClipManifest[],
 ): Promise<void> {
@@ -47,6 +69,7 @@ export async function syncClipManifests(
       batch.set(
         doc(database, "projects", clip.projectId, "clips", clip.id),
         { ...portableClip, posterPath: null },
+        { merge: true },
       );
     });
     await batch.commit();
@@ -96,4 +119,147 @@ export async function syncTranscriptChunk(
     });
     await batch.commit();
   }
+}
+
+export async function syncVisualFrame(
+  frame: VisualFrameDocument,
+): Promise<void> {
+  await setDoc(
+    doc(
+      requireDb(),
+      "projects",
+      frame.projectId,
+      "clips",
+      frame.clipId,
+      "visualFrames",
+      frame.id,
+    ),
+    frame,
+  );
+}
+
+export async function listCloudClipVisualMetadata(
+  projectId: string,
+): Promise<ClipVisualMetadata[]> {
+  const snapshot = await getDocs(
+    collection(requireDb(), "projects", projectId, "clips"),
+  );
+  return snapshot.docs
+    .map((item) =>
+      ClipVisualMetadataSchema.safeParse({
+        clipId: item.id,
+        generatedDescription: item.data().generatedDescription ?? "",
+        description: item.data().description ?? "",
+        generatedTags: item.data().generatedTags ?? [],
+        tags: item.data().tags ?? [],
+        generatedTranscriptDescription:
+          item.data().generatedTranscriptDescription ?? "",
+        generatedVisualDescription:
+          item.data().generatedVisualDescription ?? "",
+        generatedTranscriptTags: item.data().generatedTranscriptTags ?? [],
+        generatedVisualTags: item.data().generatedVisualTags ?? [],
+        keywordProvenance: item.data().keywordProvenance ?? [],
+        analysisRoute: item.data().analysisRoute ?? null,
+        analysisVersion: item.data().analysisVersion ?? null,
+        visualStage: item.data().visualStage ?? "not_started",
+        visualFacets: item.data().visualFacets ?? {
+          contentTypes: [],
+          speechStates: [],
+          settings: [],
+          weather: [],
+          colors: [],
+          moods: [],
+          actions: [],
+        },
+      }),
+    )
+    .filter((result) => result.success)
+    .map((result) => result.data);
+}
+
+export async function updateClipVisualMetadata(
+  projectId: string,
+  clipId: string,
+  description: string,
+  tags: string[],
+): Promise<void> {
+  const timestamp = new Date().toISOString();
+  await setDoc(
+    doc(requireDb(), "projects", projectId, "clips", clipId),
+    {
+      description: description.trim().slice(0, 3_000),
+      tags: tags
+        .map((tag) => tag.trim().toLocaleLowerCase())
+        .filter(Boolean)
+        .slice(0, 40),
+      visualEditedAt: timestamp,
+      visualUpdatedAt: timestamp,
+    },
+    { merge: true },
+  );
+}
+
+export async function listCloudVisualMoments(
+  projectId: string,
+  clipId: string,
+): Promise<VisualMoment[]> {
+  const snapshot = await getDocs(
+    collection(
+      requireDb(),
+      "projects",
+      projectId,
+      "clips",
+      clipId,
+      "visualMoments",
+    ),
+  );
+  return snapshot.docs
+    .map((item) =>
+      VisualMomentSchema.safeParse({ id: item.id, ...item.data() }),
+    )
+    .filter((result) => result.success)
+    .map((result) => result.data)
+    .sort((left, right) => left.startMs - right.startMs);
+}
+
+export async function updateVisualMomentMetadata(
+  moment: VisualMoment,
+  description: string,
+  tags: string[],
+): Promise<void> {
+  await setDoc(
+    doc(
+      requireDb(),
+      "projects",
+      moment.projectId,
+      "clips",
+      moment.clipId,
+      "visualMoments",
+      moment.id,
+    ),
+    {
+      description: description.trim().slice(0, 1_000),
+      tags: tags
+        .map((tag) => tag.trim().toLocaleLowerCase())
+        .filter(Boolean)
+        .slice(0, 40),
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true },
+  );
+}
+
+export async function listVisualAnalysisJobs(
+  projectId: string,
+): Promise<VisualAnalysisJob[]> {
+  const snapshot = await getDocs(
+    collection(requireDb(), "projects", projectId, "visualJobs"),
+  );
+  return snapshot.docs
+    .map((item) =>
+      VisualAnalysisJobSchema.safeParse({ id: item.id, ...item.data() }),
+    )
+    .filter((result) => result.success)
+    .map((result) => result.data)
+    .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
 }

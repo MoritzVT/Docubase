@@ -16,13 +16,13 @@
     "tauri:build": "npm run media-worker:build && tauri build",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:rules": "firebase emulators:exec --only firestore \"vitest run --config vitest.rules.config.ts\"",
+    "test:rules": "firebase emulators:exec --only firestore,storage \"vitest run --config vitest.rules.config.ts\"",
     "check": "npm run test && npm run build && npm run test:rust && npm run test:swift",
     "test:rust": "cargo test --manifest-path src-tauri/Cargo.toml",
     "test:swift": "swift test --package-path native/MediaWorker",
     "firebase:login": "firebase login",
     "firebase:use": "firebase use docubase-455a4",
-    "firebase:deploy": "firebase deploy --project docubase-455a4 --only firestore,functions",
+    "firebase:deploy": "firebase deploy --project docubase-455a4 --only firestore,storage,functions",
     "firebase:emulators": "firebase emulators:start"
   },
   "dependencies": {

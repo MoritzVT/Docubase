@@ -1,0 +1,12 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Docubase uses the named Firestore database "default". Storage rules can
+    // only read "(default)", so authenticated uploads are validated by the
+    // uploadVisualFrame callable instead. Admin SDK operations bypass rules.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

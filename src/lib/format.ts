@@ -27,6 +27,16 @@ export function formatFrameRate(
   return Number.isInteger(rate) ? `${rate}` : rate.toFixed(2);
 }
 
+export function formatRecordedAt(value: string | null): string {
+  if (!value) return "—";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(date);
+}
+
 function pad(value: number): string {
   return value.toString().padStart(2, "0");
 }

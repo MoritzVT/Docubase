@@ -28,6 +28,15 @@ struct MediaWorkerCommand {
                     durationMs: durationMs
                 )
                 try writeJSON(extraction, to: FileHandle.standardOutput)
+            case let .extractFrames(mediaPath, outputDirectoryPath):
+                let extraction = try await inspector.extractAdaptiveFrames(
+                    mediaURL: URL(fileURLWithPath: mediaPath),
+                    outputDirectoryURL: URL(
+                        fileURLWithPath: outputDirectoryPath,
+                        isDirectory: true
+                    )
+                )
+                try writeJSON(extraction, to: FileHandle.standardOutput)
             }
         } catch {
             try? writeJSON(
@@ -58,6 +67,7 @@ private enum CommandArguments {
         startMs: Int64,
         durationMs: Int64
     )
+    case extractFrames(mediaPath: String, outputDirectoryPath: String)
 
     init(arguments: [String]) throws {
         func value(after flag: String) -> String? {
@@ -108,9 +118,22 @@ private enum CommandArguments {
                 startMs: startMs,
                 durationMs: durationMs
             )
+        case "extract-frames":
+            guard
+                let mediaPath = value(after: "--path"),
+                let outputDirectoryPath = value(after: "--output-directory")
+            else {
+                throw MediaWorkerError.invalidArguments(
+                    "Usage: MediaWorker extract-frames --path <video> --output-directory <directory>"
+                )
+            }
+            self = .extractFrames(
+                mediaPath: mediaPath,
+                outputDirectoryPath: outputDirectoryPath
+            )
         default:
             throw MediaWorkerError.invalidArguments(
-                "Expected inspect or extract-audio."
+                "Expected inspect, extract-audio, or extract-frames."
             )
         }
     }
