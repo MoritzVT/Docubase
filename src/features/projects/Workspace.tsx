@@ -1,5 +1,4 @@
 import {
-  Cloud,
   Film,
   LoaderCircle,
   LogOut,
@@ -56,7 +55,7 @@ export function Workspace({ user }: { user: User }) {
           ),
         );
       } catch (error) {
-        setNotice(`Cloud sync is offline: ${readableError(error)}`);
+        setNotice(`Project data is temporarily unavailable: ${readableError(error)}`);
       }
 
       const localProjects = (await listLocalProjects()).filter(
@@ -125,8 +124,7 @@ export function Workspace({ user }: { user: User }) {
           <span className="eyebrow">Your workspaces</span>
           <h1>Documentary projects</h1>
           <p>
-            Cloud-synced project details, paired with media that remains on
-            your drives.
+            Project details paired with media that remains on your drives.
           </p>
         </div>
         <button
@@ -147,7 +145,7 @@ export function Workspace({ user }: { user: User }) {
       )}
 
       {loading ? (
-        <LoadingBlock label="Syncing projects…" />
+        <LoadingBlock label="Loading projects…" />
       ) : projects.length === 0 ? (
         <button className="empty-state" onClick={() => setCreateOpen(true)}>
           <span className="empty-icon">
@@ -180,9 +178,6 @@ export function Workspace({ user }: { user: User }) {
                 <div className="project-stats">
                   <span>{project.clipCount} clips</span>
                   <span>{formatDuration(project.totalDurationMs)}</span>
-                  <span className="sync-state">
-                    <Cloud size={14} /> Synced
-                  </span>
                 </div>
               </button>
               {project.ownerId === user.uid && (
@@ -393,7 +388,7 @@ function DeleteProjectDialog({
           <h2>Delete “{project.name}”?</h2>
           <p>
             This removes the local Docubase index, transcripts, retained
-            thumbnails, and all cloud project data. Your original footage files
+            thumbnails, and all associated project data. Your original footage files
             are never deleted. Docubase will also try to cancel active Gemini
             Batch jobs.
           </p>

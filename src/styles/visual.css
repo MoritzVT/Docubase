@@ -148,12 +148,42 @@
   background: var(--panel);
 }
 
-.moment-card > img {
+.moment-evidence {
+  display: grid;
+  width: 112px;
+  min-height: 160px;
+  grid-auto-rows: 1fr;
+  background: var(--panel-hover);
+}
+
+.moment-evidence figure {
+  position: relative;
+  min-height: 72px;
+  overflow: hidden;
+  margin: 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.moment-evidence figure:last-child {
+  border-bottom: 0;
+}
+
+.moment-evidence img {
+  display: block;
   width: 112px;
   height: 100%;
-  min-height: 160px;
   object-fit: cover;
-  background: var(--panel-hover);
+}
+
+.moment-evidence figcaption {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  padding: 2px 4px;
+  color: #fff;
+  background: rgba(20, 25, 33, 0.72);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 7px;
 }
 
 .moment-card-body {

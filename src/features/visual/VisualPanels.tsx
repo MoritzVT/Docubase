@@ -298,9 +298,7 @@ function VisualMomentCard({
   const [tags, setTags] = useState(moment.tags.join(", "));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const evidenceFrame = frames.find((frame) =>
-    moment.evidenceFrameIds.includes(frame.id),
-  );
+  const evidenceFrames = frames.filter((frame) => frame.momentId === moment.id);
 
   useEffect(() => {
     setDescription(moment.description);
@@ -326,8 +324,21 @@ function VisualMomentCard({
 
   return (
     <article className="moment-card">
-      {evidenceFrame && (
-        <img alt="" src={posterSource(evidenceFrame.localPath) ?? undefined} />
+      {evidenceFrames.length > 0 && (
+        <div className="moment-evidence">
+          {evidenceFrames.map((frame) => (
+            <figure key={frame.id}>
+              <img alt="" src={posterSource(frame.localPath) ?? undefined} />
+              <figcaption>
+                {clipTimecode(
+                  frame.timestampMs,
+                  clip.frameRate,
+                  clip.startTimecodeFrames,
+                )}
+              </figcaption>
+            </figure>
+          ))}
+        </div>
       )}
       <div className="moment-card-body">
         <div className="moment-time">

@@ -95,7 +95,7 @@ export function useTranscriptionWorkflow(
       let payload;
       if (chunk.stage === "syncing") {
         setTranscriptionProgress(
-          `${clip.filename}: resuming cloud sync (${position + 1}/${chunks.length})`,
+          `${clip.filename}: finishing transcript save (${position + 1}/${chunks.length})`,
         );
         payload = await transcriptChunkPayload(
           project.id,
@@ -170,7 +170,7 @@ export function useTranscriptionWorkflow(
         tone: "success",
         message: `${remainingTranscribableClips.length} clip${
           remainingTranscribableClips.length === 1 ? "" : "s"
-        } transcribed locally. Temporary audio was removed after safe sync.`,
+        } transcribed locally. Temporary audio was removed after the transcript was saved.`,
       });
     } catch (error) {
       await refreshTranscriptSummaries();

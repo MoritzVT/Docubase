@@ -185,14 +185,6 @@
   font-size: 11px;
 }
 
-.sync-state {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  color: var(--success);
-}
-
 .empty-state {
   display: grid;
   width: 100%;

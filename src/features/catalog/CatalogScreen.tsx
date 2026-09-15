@@ -262,7 +262,7 @@ export function CatalogScreen({
       await refreshClips();
       setNotice({
         tone: "success",
-        message: `${imported.length} clip${imported.length === 1 ? "" : "s"} cataloged. Only metadata was synced to Firebase.`,
+        message: `${imported.length} clip${imported.length === 1 ? "" : "s"} cataloged. Source footage remains on this Mac.`,
       });
     } catch (error) {
       setNotice({ tone: "error", message: readableError(error) });
@@ -396,7 +396,6 @@ export function CatalogScreen({
           <Metric value={clips.length.toLocaleString()} label="clips" />
           <Metric value={formatDuration(totalDuration)} label="footage" />
           <Metric value={formatBytes(totalBytes)} label="source drives" />
-          <Metric value="Local" label="transcription" />
           <Metric value={formatUsd(recordedVisualCost)} label="visual AI" />
         </div>
       </section>

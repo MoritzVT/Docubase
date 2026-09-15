@@ -150,7 +150,8 @@
     grid-template-columns: 96px 1fr;
   }
 
-  .moment-card > img {
+  .moment-evidence,
+  .moment-evidence img {
     width: 96px;
   }
 
