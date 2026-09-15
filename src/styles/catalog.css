@@ -11,12 +11,17 @@
 }
 
 .catalog-title .brand-mark {
-  width: 31px;
-  height: 31px;
+  width: 15px;
+  height: 29px;
+}
+
+.catalog-title .brand {
+  height: 29px;
+  padding-left: 22px;
 }
 
 .catalog-title .brand > strong {
-  font-size: 16px;
+  font-size: 17px;
 }
 
 .title-divider {
@@ -63,7 +68,7 @@
   padding: 13px 16px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: rgba(255, 255, 255, 0.45);
+  background: var(--panel);
 }
 
 .metric strong {
@@ -82,10 +87,10 @@
   gap: 8px 20px;
   margin: 13px 0;
   padding: 13px 15px;
-  border: 1px solid #c3d6d4;
+  border: 1px solid var(--accent-blue);
   border-radius: 10px;
-  color: var(--teal);
-  background: #eef6f4;
+  color: var(--accent-text);
+  background: var(--accent-blue-soft);
   font-size: 12px;
 }
 
@@ -106,52 +111,52 @@
   grid-column: 1 / -1;
   width: 100%;
   height: 5px;
-  accent-color: var(--teal);
+  accent-color: var(--accent-blue);
 }
 
 .progress-panel.transcription {
-  border-color: #efcba6;
-  color: #785024;
-  background: #fff7e9;
+  border-color: var(--accent-amber);
+  color: var(--accent-text-strong);
+  background: var(--accent-amber-soft);
 }
 
 .progress-panel.transcription progress {
   overflow: hidden;
   border: 0;
   border-radius: 999px;
-  background: #eadfca;
+  background: var(--progress-track);
 }
 
 .progress-panel.transcription progress::-webkit-progress-bar {
-  background: #eadfca;
+  background: var(--progress-track);
 }
 
 .progress-panel.transcription progress::-webkit-progress-value {
   width: 35% !important;
-  background: var(--orange);
+  background: var(--accent-amber);
   animation: indeterminate 1.6s ease-in-out infinite alternate;
 }
 
 .progress-panel.visual {
-  border-color: #bcd5ce;
-  color: #285d53;
-  background: #edf8f4;
+  border-color: var(--accent-green);
+  color: var(--accent-text);
+  background: var(--accent-green-soft);
 }
 
 .progress-panel.visual progress {
   overflow: hidden;
   border: 0;
   border-radius: 999px;
-  background: #dcebe6;
+  background: var(--progress-track);
 }
 
 .progress-panel.visual progress::-webkit-progress-bar {
-  background: #dcebe6;
+  background: var(--progress-track);
 }
 
 .progress-panel.visual progress::-webkit-progress-value {
   width: 35% !important;
-  background: #397c6a;
+  background: var(--accent-blue);
   animation: indeterminate 1.6s ease-in-out infinite alternate;
 }
 
@@ -164,22 +169,22 @@
   overflow: hidden;
   border: 0;
   border-radius: 999px;
-  background: #dcebe6;
+  background: var(--progress-track);
 }
 
 .progress-panel.analysis-progress progress::-webkit-progress-bar {
-  background: #dcebe6;
+  background: var(--progress-track);
 }
 
 .progress-panel.analysis-progress progress::-webkit-progress-value {
   border-radius: 999px;
-  background: #397c6a;
+  background: var(--accent-blue);
   transition: width 300ms ease;
 }
 
 .progress-panel.analysis-progress small {
   grid-column: 1 / -1;
-  color: #5f7771;
+  color: var(--muted);
   line-height: 1.45;
 }
 
@@ -189,7 +194,7 @@
   border: 1px solid var(--line);
   border-radius: 13px;
   background: var(--panel);
-  box-shadow: 0 8px 28px rgba(39, 49, 48, 0.04);
+  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.12);
 }
 
 .catalog-toolbar {
@@ -216,14 +221,8 @@
   white-space: nowrap;
 }
 
-.catalog-filters select {
-  height: 38px;
-  border: 1px solid var(--line);
-  border-radius: 9px;
-  padding: 0 32px 0 11px;
-  color: var(--ink);
-  background: #fffefa;
-  font-size: 11px;
+.catalog-filter-menu {
+  width: 158px;
 }
 
 .search-box {
@@ -231,7 +230,7 @@
   display: flex;
   width: min(470px, 100%);
   align-items: center;
-  color: #798685;
+  color: var(--muted);
 }
 
 .search-box svg {
@@ -241,7 +240,7 @@
 
 .search-box input {
   padding-left: 39px;
-  background: #f9f8f4;
+  background: var(--field);
 }
 
 .table-scroll {
@@ -258,8 +257,8 @@ table {
 th {
   height: 41px;
   padding: 0 13px;
-  color: #7b8684;
-  background: #f6f4ee;
+  color: var(--muted);
+  background: var(--panel-soft);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -270,12 +269,12 @@ th {
 td {
   height: 67px;
   padding: 8px 13px;
-  border-top: 1px solid #ece8df;
-  color: #435557;
+  border-top: 1px solid var(--line);
+  color: var(--muted-strong);
 }
 
 tbody tr:hover {
-  background: #fdfcf8;
+  background: var(--panel-hover);
 }
 
 .clip-cell {
@@ -294,8 +293,8 @@ tbody tr:hover {
   overflow: hidden;
   place-items: center;
   border-radius: 6px;
-  color: #8fa3a2;
-  background: #dfe5e1;
+  color: var(--muted);
+  background: var(--panel-hover);
 }
 
 .poster img {
@@ -319,7 +318,7 @@ tbody tr:hover {
 .table-subline {
   display: block;
   margin-top: 4px;
-  color: #8a9694;
+  color: var(--muted);
   font-size: 10px;
 }
 
@@ -327,7 +326,7 @@ tbody tr:hover {
   display: -webkit-box;
   max-width: 320px;
   overflow: hidden;
-  color: #8b5b45;
+  color: var(--accent-text);
   font-size: 10px;
   line-height: 1.4;
   white-space: normal;
@@ -339,7 +338,7 @@ tbody tr:hover {
   display: -webkit-box;
   max-width: 320px;
   overflow: hidden;
-  color: #476760;
+  color: var(--muted);
   font-size: 10px;
   line-height: 1.4;
   white-space: normal;
@@ -356,8 +355,8 @@ tbody tr:hover {
 .mini-tags em {
   border-radius: 999px;
   padding: 2px 6px;
-  color: #47685f;
-  background: #e9f3ef;
+  color: var(--accent-text);
+  background: var(--accent-green-soft);
   font-size: 8px;
   font-style: normal;
   font-weight: 700;
@@ -368,7 +367,7 @@ tbody tr:hover {
   align-items: center;
   gap: 7px;
   border: 0;
-  color: #33484b;
+  color: var(--muted-strong);
   background: transparent;
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 11px;
@@ -398,17 +397,32 @@ tbody tr:hover {
   gap: 4px;
 }
 
-.date-sort-header select {
-  width: auto;
+.date-sort-menu {
+  width: 108px;
+}
+
+.date-sort-menu .select-menu-trigger {
+  min-height: 26px;
   border: 0;
-  padding: 0;
+  padding: 0 3px;
   color: inherit;
   background: transparent;
   font: inherit;
   font-weight: inherit;
   letter-spacing: inherit;
   text-transform: inherit;
-  cursor: pointer;
+}
+
+.date-sort-menu .select-menu-trigger:hover,
+.date-sort-menu .select-menu-trigger[aria-expanded="true"] {
+  color: var(--ink);
+  background: transparent;
+}
+
+.select-menu-options.date-sort-menu {
+  font-size: 10px;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .catalog-date {
@@ -422,16 +436,16 @@ tbody tr:hover {
   gap: 4px;
   border-radius: 999px;
   padding: 4px 7px;
-  color: #4d6d5f;
-  background: #e8f3ec;
+  color: var(--accent-text);
+  background: var(--accent-green-soft);
   font-size: 9px;
   font-weight: 700;
   text-transform: capitalize;
 }
 
 .status-pill.failed {
-  color: #93483f;
-  background: #f9e8e4;
+  color: #b9cae8;
+  background: var(--accent-red-soft);
 }
 
 .transcript-toggle {
@@ -441,8 +455,8 @@ tbody tr:hover {
   border: 0;
   border-radius: 999px;
   padding: 5px 8px;
-  color: #68572d;
-  background: #f5edd5;
+  color: var(--accent-text-strong);
+  background: var(--accent-amber-soft);
   font-size: 9px;
   font-weight: 700;
   text-transform: capitalize;
@@ -450,41 +464,41 @@ tbody tr:hover {
 }
 
 .transcript-toggle.complete {
-  color: #35684f;
-  background: #e5f2e9;
+  color: var(--accent-text);
+  background: var(--accent-green-soft);
 }
 
 .transcript-toggle.visual {
-  color: #315f58;
-  background: #e7f2ee;
+  color: var(--accent-text);
+  background: var(--accent-blue-soft);
 }
 
 .transcript-toggle.visual.batched,
 .transcript-toggle.visual.analyzing,
 .transcript-toggle.visual.uploading {
-  color: #755129;
-  background: #faefd8;
+  color: var(--accent-text-strong);
+  background: var(--accent-amber-soft);
 }
 
 .transcript-toggle.visual.complete {
-  color: #2e664e;
-  background: #e3f2e8;
+  color: var(--accent-text);
+  background: var(--accent-green-soft);
 }
 
 .transcript-toggle.failed {
-  color: #93483f;
-  background: #f9e8e4;
+  color: #b9cae8;
+  background: var(--accent-red-soft);
 }
 
 .transcript-toggle:disabled {
-  color: #85918f;
-  background: #edf0ed;
+  color: #777773;
+  background: var(--panel-soft);
   cursor: default;
 }
 
 .row-action {
   border: 0;
-  color: var(--teal);
+  color: var(--accent-text);
   background: transparent;
   font-size: 11px;
   font-weight: 700;
@@ -495,12 +509,12 @@ tbody tr:hover {
   height: auto;
   padding: 0;
   white-space: normal;
-  background: #f7f5ef;
+  background: var(--panel-soft);
 }
 
 .transcript-panel {
   padding: 23px 26px 26px;
-  border-top: 1px solid #e4dfd4;
+  border-top: 1px solid var(--line);
 }
 
 .transcript-heading {
@@ -527,11 +541,11 @@ tbody tr:hover {
 
 .transcript-empty {
   padding: 28px;
-  border: 1px dashed #cfcbbf;
+  border: 1px dashed var(--line-strong);
   border-radius: 10px;
   color: var(--muted);
   text-align: center;
-  background: rgba(255, 255, 255, 0.45);
+  background: var(--panel);
 }
 
 .utterance-list {
@@ -539,9 +553,9 @@ tbody tr:hover {
   max-height: 420px;
   overflow: auto;
   gap: 1px;
-  border: 1px solid #ded9ce;
+  border: 1px solid var(--line);
   border-radius: 10px;
-  background: #e7e2d8;
+  background: var(--line);
 }
 
 .utterance {
@@ -549,11 +563,11 @@ tbody tr:hover {
   grid-template-columns: 128px 1fr;
   gap: 18px;
   padding: 13px 15px;
-  background: #fffefa;
+  background: var(--panel);
 }
 
 .utterance.match {
-  background: #fff6dc;
+  background: var(--accent-amber-soft);
 }
 
 .utterance-meta {
@@ -563,19 +577,19 @@ tbody tr:hover {
 }
 
 .utterance-meta strong {
-  color: var(--teal);
+  color: var(--accent-text);
   font-size: 10px;
 }
 
 .utterance-meta span {
-  color: #82908e;
+  color: var(--muted);
   font-family: "SFMono-Regular", Consolas, monospace;
   font-size: 9px;
 }
 
 .utterance p {
   margin: 0;
-  color: #314a4c;
+  color: var(--muted-strong);
   font-size: 12px;
   line-height: 1.55;
 }
@@ -588,9 +602,9 @@ tbody tr:hover {
   display: grid;
   gap: 12px;
   padding: 18px;
-  border: 1px solid #eacba9;
+  border: 1px solid var(--accent-amber);
   border-radius: 11px;
-  background: #fff7e9;
+  background: var(--accent-amber-soft);
 }
 
 .cost-callout > div {
@@ -601,20 +615,20 @@ tbody tr:hover {
 }
 
 .cost-callout span {
-  color: #7e6647;
+  color: var(--accent-text-strong);
   font-size: 11px;
   font-weight: 700;
   text-transform: uppercase;
 }
 
 .cost-callout strong {
-  color: #754625;
+  color: var(--accent-text-strong);
   font-size: 26px;
   letter-spacing: -0.04em;
 }
 
 .cost-callout p {
-  color: #75644e;
+  color: var(--muted-strong);
   line-height: 1.55;
 }
 

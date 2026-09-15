@@ -32,12 +32,15 @@
   place-items: center;
   border: 1px solid var(--line);
   border-radius: 9px;
-  background: rgba(255, 255, 255, 0.55);
+  color: var(--muted-strong);
+  background: var(--panel);
   cursor: pointer;
 }
 
 .icon-button:hover {
-  background: white;
+  border-color: var(--line-strong);
+  color: var(--white);
+  background: var(--panel-hover);
 }
 
 .page-heading {
@@ -81,12 +84,16 @@
   border-radius: 15px;
   text-align: left;
   background: var(--panel);
-  box-shadow: 0 5px 16px rgba(39, 49, 48, 0.03);
+  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.11);
+  transition:
+    transform 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease;
 }
 
 .project-card:hover {
   transform: translateY(-2px);
-  border-color: #b8c0bb;
+  border-color: var(--line-strong);
   box-shadow: var(--shadow);
 }
 
@@ -121,9 +128,9 @@
 }
 
 .project-delete-button:hover {
-  border-color: #e6c7c2;
+  border-color: var(--accent-red);
   color: var(--danger);
-  background: #fff2ef;
+  background: var(--accent-red-soft);
 }
 
 .project-card-top {
@@ -138,8 +145,8 @@
   height: 48px;
   place-items: center;
   border-radius: 13px;
-  color: #f7e6cb;
-  background: var(--teal);
+  color: var(--white);
+  background: var(--accent-blue);
   font-size: 13px;
   font-weight: 700;
   letter-spacing: 0.08em;
@@ -167,7 +174,7 @@
   align-items: center;
   gap: 13px;
   padding-top: 18px;
-  border-top: 1px solid #e7e3da;
+  border-top: 1px solid var(--line);
   color: var(--muted);
   font-size: 11px;
 }
@@ -187,10 +194,10 @@
   place-items: center;
   align-content: center;
   gap: 10px;
-  border: 1px dashed #bfc1ba;
+  border: 1px dashed var(--line-strong);
   border-radius: 15px;
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--panel-soft);
   cursor: pointer;
 }
 
@@ -200,6 +207,11 @@
   font-size: 13px;
 }
 
+.empty-state:hover {
+  border-color: var(--accent-blue);
+  background: var(--panel);
+}
+
 .empty-icon {
   display: grid;
   width: 50px;
@@ -207,8 +219,8 @@
   place-items: center;
   margin-bottom: 5px;
   border-radius: 14px;
-  color: #f1d49f;
-  background: var(--teal);
+  color: var(--canvas);
+  background: var(--accent-amber);
 }
 
 .modal-backdrop {
@@ -218,7 +230,7 @@
   display: grid;
   place-items: center;
   padding: 24px;
-  background: rgba(12, 34, 38, 0.48);
+  background: rgba(0, 0, 0, 0.72);
   backdrop-filter: blur(3px);
 }
 
@@ -231,7 +243,8 @@
   padding: 30px;
   border-radius: 17px;
   background: var(--panel);
-  box-shadow: 0 28px 70px rgba(13, 32, 35, 0.22);
+  border: 1px solid var(--line);
+  box-shadow: 10px 10px 0 rgba(0, 0, 0, 0.24);
 }
 
 .modal-card h2 {
@@ -261,4 +274,3 @@
   gap: 9px;
   padding-top: 4px;
 }
-

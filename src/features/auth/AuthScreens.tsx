@@ -5,12 +5,14 @@ import {
 } from "firebase/auth";
 import { type FormEvent, useState } from "react";
 import { Brand, Notice } from "../../components/SharedUi";
+import { ThemeToggle } from "../../components/Theme";
 import { requireAuth } from "../../lib/firebase";
 import { readableError } from "../../lib/presentation";
 
 export function ConfigurationScreen({ message }: { message: string }) {
   return (
     <main className="centered-shell">
+      <ThemeToggle className="screen-theme-toggle" />
       <section className="setup-card">
         <Brand />
         <span className="eyebrow">One-time setup</span>
@@ -68,6 +70,7 @@ export function AuthScreen() {
         </div>
       </section>
       <section className="auth-panel">
+        <ThemeToggle className="auth-theme-toggle" />
         <form className="form-card" onSubmit={submit}>
           <span className="eyebrow">
             {mode === "login" ? "Welcome back" : "Create your account"}

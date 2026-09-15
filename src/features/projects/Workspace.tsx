@@ -10,6 +10,7 @@ import {
 import { signOut, type User } from "firebase/auth";
 import { type FormEvent, useCallback, useEffect, useState } from "react";
 import { Brand, LoadingBlock, Notice } from "../../components/SharedUi";
+import { ThemeToggle } from "../../components/Theme";
 import { deleteCloudProject, listCloudProjects, saveProject } from "../../lib/cloud";
 import type { LocalProject, Project } from "../../lib/contracts";
 import { requireAuth } from "../../lib/firebase";
@@ -107,6 +108,7 @@ export function Workspace({ user }: { user: User }) {
       <header className="topbar">
         <Brand />
         <div className="topbar-actions">
+          <ThemeToggle />
           <span className="account-label">{user.email}</span>
           <button
             aria-label="Sign out"

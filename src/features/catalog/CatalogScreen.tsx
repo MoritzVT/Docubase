@@ -17,6 +17,8 @@ import {
 import type { User } from "firebase/auth";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Brand, LoadingBlock, Metric, Notice } from "../../components/SharedUi";
+import { SelectMenu } from "../../components/SelectMenu";
+import { ThemeToggle } from "../../components/Theme";
 import { syncClipManifests } from "../../lib/cloud";
 import type {
   ClipManifest,
@@ -53,6 +55,25 @@ import { useVisualWorkflow } from "./useVisualWorkflow";
 import type { CatalogNotice } from "./types";
 
 type DateSortField = "recordedAt" | "createdAt" | "sourceModifiedAt";
+
+const visualFilterOptions = [
+  { value: "all", label: "All visual types" },
+  { value: "interview", label: "Interview" },
+  { value: "b-roll", label: "B-roll" },
+  { value: "archive", label: "Archive" },
+  { value: "action", label: "Action" },
+  { value: "establishing", label: "Establishing" },
+  { value: "no-speech", label: "Non-talking" },
+  { value: "single-speaker", label: "Single speaker" },
+  { value: "multiple-speakers", label: "Multiple speakers" },
+  { value: "voice-over", label: "Voice-over" },
+] as const;
+
+const dateSortOptions = [
+  { value: "recordedAt", label: "Recorded" },
+  { value: "createdAt", label: "Date added" },
+  { value: "sourceModifiedAt", label: "File modified" },
+] as const;
 
 function clipDate(clip: ClipManifest, field: DateSortField): string | null {
   return field === "createdAt" ? clip.createdAt : clip[field];
@@ -289,6 +310,7 @@ export function CatalogScreen({
           </div>
         </div>
         <div className="topbar-actions">
+          <ThemeToggle />
           <button
             className="secondary-button compact"
             disabled={
@@ -453,22 +475,13 @@ export function CatalogScreen({
             />
           </label>
           <div className="catalog-filters">
-            <select
-              aria-label="Visual category"
-              onChange={(event) => setVisualFilter(event.target.value)}
+            <SelectMenu
+              ariaLabel="Visual category"
+              className="catalog-filter-menu"
+              onChange={setVisualFilter}
+              options={visualFilterOptions}
               value={visualFilter}
-            >
-              <option value="all">All visual types</option>
-              <option value="interview">Interview</option>
-              <option value="b-roll">B-roll</option>
-              <option value="archive">Archive</option>
-              <option value="action">Action</option>
-              <option value="establishing">Establishing</option>
-              <option value="no-speech">Non-talking</option>
-              <option value="single-speaker">Single speaker</option>
-              <option value="multiple-speakers">Multiple speakers</option>
-              <option value="voice-over">Voice-over</option>
-            </select>
+            />
             <span>
               {visibleClips.length} of {clips.length} clips
             </span>
@@ -507,17 +520,13 @@ export function CatalogScreen({
                   <th>Resolution</th>
                   <th>
                     <div className="date-sort-header">
-                      <select
-                        aria-label="Date used to sort clips"
-                        onChange={(event) =>
-                          setDateSortField(event.target.value as DateSortField)
-                        }
+                      <SelectMenu
+                        ariaLabel="Date used to sort clips"
+                        className="date-sort-menu"
+                        onChange={setDateSortField}
+                        options={dateSortOptions}
                         value={dateSortField}
-                      >
-                        <option value="recordedAt">Recorded</option>
-                        <option value="createdAt">Date added</option>
-                        <option value="sourceModifiedAt">File modified</option>
-                      </select>
+                      />
                       <button
                         aria-label={`Sort selected date ${
                           dateSortDirection === "ascending" ? "descending" : "ascending"
