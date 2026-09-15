@@ -78,6 +78,48 @@ body {
   background: var(--canvas);
 }
 
+.splash-screen {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: var(--canvas);
+  pointer-events: none;
+  animation: splash-screen-exit 3200ms ease both;
+}
+
+.splash-logo {
+  display: block;
+  width: clamp(120px, 18vw, 190px);
+  height: auto;
+  opacity: 0;
+  animation: splash-logo-reveal 3000ms ease-in-out both;
+}
+
+@keyframes splash-logo-reveal {
+  0% {
+    opacity: 0;
+  }
+  14%,
+  84% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes splash-screen-exit {
+  0%,
+  90% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
 button,
 input,
 textarea {
@@ -169,10 +211,10 @@ p {
 
 .brand-mark {
   position: absolute;
-  top: 0;
+  top: 3px;
   left: 0;
-  width: 17px;
-  height: 32px;
+  width: 14px;
+  height: 27px;
   padding: 0;
   border: 0;
   color: var(--accent-blue);

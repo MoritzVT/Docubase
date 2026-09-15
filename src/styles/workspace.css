@@ -115,7 +115,7 @@
   position: absolute;
   z-index: 1;
   top: 20px;
-  right: 50px;
+  right: 20px;
   display: grid;
   width: 34px;
   height: 34px;
@@ -128,9 +128,15 @@
 }
 
 .project-delete-button:hover {
-  border-color: var(--accent-red);
-  color: var(--danger);
-  background: var(--accent-red-soft);
+  border-color: #d98e87;
+  color: #efa8a1;
+  background: rgba(208, 85, 71, 0.16);
+}
+
+:root[data-theme="light"] .project-delete-button:hover {
+  border-color: #df948d;
+  color: #b84f45;
+  background: #f8e5e3;
 }
 
 .project-card-top {

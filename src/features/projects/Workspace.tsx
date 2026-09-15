@@ -1,5 +1,4 @@
 import {
-  ChevronRight,
   Cloud,
   Film,
   LoaderCircle,
@@ -173,7 +172,6 @@ export function Workspace({ user }: { user: User }) {
                   <span className="project-monogram">
                     {project.name.slice(0, 2).toUpperCase()}
                   </span>
-                  <ChevronRight size={19} />
                 </div>
                 <div>
                   <h2>{project.name}</h2>
