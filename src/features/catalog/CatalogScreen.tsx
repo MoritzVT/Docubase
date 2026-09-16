@@ -12,7 +12,6 @@ import {
   LoaderCircle,
   RefreshCw,
   Search,
-  Sparkles,
   TriangleAlert,
   X,
 } from "lucide-react";
@@ -60,6 +59,10 @@ import { SearchIndexDialog } from "./SearchIndexDialog";
 import type { CatalogNotice } from "./types";
 
 type DateSortField = "recordedAt" | "createdAt" | "sourceModifiedAt";
+
+function projectSummary(project: LocalProject): string {
+  return project.summary.trim();
+}
 
 const visualFilterOptions = [
   { value: "all", label: "All visual types" },
@@ -407,7 +410,7 @@ export function CatalogScreen({
 
       <section className="catalog-summary">
         <div>
-          <span className="eyebrow">Local media catalog</span>
+          <span className="eyebrow">{projectSummary(project)}</span>
           <h1>{project.name}</h1>
           <p>{project.brief || "No production brief yet."}</p>
         </div>
@@ -520,12 +523,7 @@ export function CatalogScreen({
               }
               type="submit"
             >
-              {semanticSearch.searching ? (
-                <LoaderCircle className="spin" size={15} />
-              ) : (
-                <Sparkles size={15} />
-              )}
-              Search
+              {semanticSearch.searching ? "Searching…" : "Search"}
             </button>
           </form>
           <div className="catalog-filters">

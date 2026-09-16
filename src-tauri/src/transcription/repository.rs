@@ -5,9 +5,8 @@ use sha2::{Digest, Sha256};
 
 use crate::database::connection;
 use crate::models::{
-    AppState, TranscriptChunkDocument, TranscriptChunkPayload, TranscriptUtterance,
-    TranscriptWord, TranscriptionChunk, WorkerSpeechTranscription,
-    TRANSCRIPTION_CHUNK_DURATION_MS,
+    AppState, TranscriptChunkDocument, TranscriptChunkPayload, TranscriptUtterance, TranscriptWord,
+    TranscriptionChunk, WorkerSpeechTranscription, TRANSCRIPTION_CHUNK_DURATION_MS,
 };
 use crate::utilities::{now, string_error};
 

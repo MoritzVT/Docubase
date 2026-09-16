@@ -237,9 +237,11 @@ export function useVisualWorkflow(
         ),
       );
       const sharedContext = [
-        project.brief.slice(0, 800),
-        project.knownNames.slice(0, 30).join(", ").slice(0, 500),
-        project.terminology.slice(0, 50).join(", ").slice(0, 800),
+        `Project brief: ${project.brief.slice(0, 800) || "Not provided"}`,
+        `Known names: ${project.knownNames.slice(0, 30).join(", ").slice(0, 500) || "None"}`,
+        `Terminology: ${project.terminology.slice(0, 50).join(", ").slice(0, 800) || "None"}`,
+        "Project background may clarify names, terminology, and subject matter, but it is not evidence that anything is said or visible in this clip.",
+        `Project background: ${project.contextText.slice(0, 12_000) || "Not provided"}`,
       ].join("\n");
       setAnalysisMode("batch");
       setVisualPreflight({
@@ -257,7 +259,7 @@ export function useVisualWorkflow(
             }
           }
           const contextTokens = Math.ceil(
-            `${sharedContext}\n${clip.filename.slice(0, 300)}`.length / 4,
+            `${sharedContext}\nClip: ${clip.filename.slice(0, 300)}`.length / 4,
           );
           return total + momentFrames.size * contextTokens;
         }, 0),
@@ -267,7 +269,7 @@ export function useVisualWorkflow(
         ),
         summaryInputTextTokens: prepared.reduce((total, { clip }) => {
           const contextTokens = Math.ceil(
-            `${sharedContext}\n${clip.filename.slice(0, 300)}`.length / 4,
+            `${sharedContext}\nClip: ${clip.filename.slice(0, 300)}`.length / 4,
           );
           const transcriptCharacters = (
             transcriptForEstimate.get(clip.id) ?? []

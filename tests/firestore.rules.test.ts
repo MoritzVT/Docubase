@@ -123,6 +123,25 @@ describe("Docubase Firestore rules", () => {
     );
   });
 
+  it("allows bounded project context and rejects oversized context", async () => {
+    await seedProject();
+    const database = environment.authenticatedContext("owner").firestore();
+    const projectReference = doc(database, "projects", "film");
+    await assertSucceeds(
+      updateDoc(projectReference, {
+        contextResourceNames: ["background.txt"],
+        contextText: "Background vocabulary for this documentary.",
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+    await assertFails(
+      updateDoc(projectReference, {
+        contextText: "x".repeat(12_001),
+        updatedAt: new Date().toISOString(),
+      }),
+    );
+  });
+
   it("allows portable clip metadata and rejects a local source path", async () => {
     await seedProject(["owner", "editor"]);
     const database = environment.authenticatedContext("editor").firestore();

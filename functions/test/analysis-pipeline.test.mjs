@@ -11,6 +11,7 @@ import {
 } from "../lib/analysis-pipeline.js";
 import {
   requireVisualFrameManifest,
+  visualPromptContext,
   visualMomentPrompt,
 } from "../lib/visual/requests.js";
 import {
@@ -161,6 +162,20 @@ test("visual moment prompts contain frames but no transcript evidence", () => {
   assert.match(prompt, /frame-1/);
   assert.match(prompt, /No transcript evidence is provided/);
   assert.doesNotMatch(prompt, /utterance|Transcript evidence:/i);
+});
+
+test("project text resources are labeled as background rather than evidence", () => {
+  const context = visualPromptContext(
+    {
+      brief: "A cycling documentary",
+      knownNames: ["Joost"],
+      terminology: ["climate finance"],
+      contextText: "Source: research.txt\nCycling4Climate organizes the ride.",
+    },
+    { filename: "ride.mov" },
+  );
+  assert.match(context, /Cycling4Climate organizes the ride/);
+  assert.match(context, /not evidence that anything is said or visible/i);
 });
 
 test("local frame manifests derive their protected storage paths", () => {

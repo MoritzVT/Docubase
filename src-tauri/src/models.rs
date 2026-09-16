@@ -48,15 +48,20 @@ pub(crate) struct LocalProject {
     pub(crate) id: String,
     pub(crate) owner_id: String,
     pub(crate) name: String,
+    pub(crate) summary: String,
     pub(crate) brief: String,
     pub(crate) known_names: Vec<String>,
     pub(crate) terminology: Vec<String>,
+    pub(crate) context_resource_names: Vec<String>,
+    pub(crate) context_text: String,
     pub(crate) budget_per_footage_hour: f64,
     pub(crate) member_ids: Vec<String>,
     pub(crate) created_at: String,
     pub(crate) updated_at: String,
     pub(crate) clip_count: i64,
     pub(crate) total_duration_ms: i64,
+    pub(crate) thumbnail_path: Option<String>,
+    pub(crate) context_resource_paths: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]

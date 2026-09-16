@@ -31,7 +31,7 @@
   height: 38px;
   place-items: center;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--muted-strong);
   background: var(--panel);
   cursor: pointer;
@@ -76,15 +76,15 @@
 .project-card {
   position: relative;
   display: flex;
-  min-height: 270px;
+  min-height: 250px;
   flex-direction: column;
   justify-content: space-between;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 15px;
+  border-radius: 0;
   text-align: left;
-  background: var(--panel);
-  box-shadow: 4px 4px 0 rgba(0, 0, 0, 0.11);
+  background: var(--accent-blue);
+  box-shadow: none;
   transition:
     transform 160ms ease,
     border-color 160ms ease,
@@ -92,18 +92,41 @@
 }
 
 .project-card:hover {
-  transform: translateY(-2px);
   border-color: var(--line-strong);
-  box-shadow: var(--shadow);
+}
+
+.project-card-thumbnail,
+.project-card-overlay {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.project-card-thumbnail {
+  object-fit: cover;
+}
+
+.project-card-overlay {
+  z-index: 1;
+  background: rgba(91, 126, 188, 0.5);
+  transition: background 180ms ease;
+}
+
+.project-card:hover .project-card-overlay,
+.project-card:focus-within .project-card-overlay {
+  background: var(--accent-blue);
 }
 
 .project-card-open {
   display: flex;
   width: 100%;
-  min-height: 268px;
+  position: relative;
+  z-index: 2;
+  min-height: 248px;
   flex: 1;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 24px;
   border: 0;
   text-align: left;
@@ -111,20 +134,41 @@
   cursor: pointer;
 }
 
-.project-delete-button {
+.project-card-actions {
   position: absolute;
-  z-index: 1;
+  z-index: 3;
   top: 20px;
   right: 20px;
+  display: flex;
+  gap: 7px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.project-card:hover .project-card-actions,
+.project-card:focus-within .project-card-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.project-edit-button,
+.project-delete-button {
   display: grid;
   width: 34px;
   height: 34px;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 8px;
-  color: var(--muted);
-  background: var(--panel);
+  border-radius: 0;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(24, 33, 48, 0.32);
   cursor: pointer;
+}
+
+.project-edit-button:hover {
+  border-color: rgba(255, 255, 255, 0.62);
+  color: #fff;
+  background: rgba(24, 33, 48, 0.5);
 }
 
 .project-delete-button:hover {
@@ -139,49 +183,49 @@
   background: #f8e5e3;
 }
 
-.project-card-top {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.project-monogram {
-  display: grid;
-  width: 48px;
-  height: 48px;
-  place-items: center;
-  border-radius: 13px;
-  color: var(--white);
-  background: var(--accent-blue);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
 .project-card h2 {
-  margin-bottom: 8px;
-  font-size: 21px;
+  margin: 0;
+  color: #fff;
+  font-size: 24px;
   letter-spacing: -0.03em;
 }
 
-.project-card p {
-  display: -webkit-box;
+.project-card-copy {
+  width: 100%;
+}
+
+.project-card-details {
+  max-height: 0;
   overflow: hidden;
-  margin-bottom: 0;
-  color: var(--muted);
+  opacity: 0;
+  transform: translateY(7px);
+  transition:
+    max-height 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.project-card:hover .project-card-details,
+.project-card:focus-within .project-card-details {
+  max-height: 90px;
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.project-card p {
+  margin: 6px 0 0;
+  color: rgba(255, 255, 255, 0.82);
   font-size: 13px;
-  line-height: 1.55;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 3;
+  line-height: 1.4;
 }
 
 .project-stats {
   display: flex;
   align-items: center;
   gap: 13px;
-  padding-top: 18px;
-  border-top: 1px solid var(--line);
-  color: var(--muted);
+  padding-top: 9px;
+  border-top: 0;
+  color: rgba(255, 255, 255, 0.72);
   font-size: 11px;
 }
 
@@ -193,7 +237,7 @@
   align-content: center;
   gap: 10px;
   border: 1px dashed var(--line-strong);
-  border-radius: 15px;
+  border-radius: 0;
   color: var(--ink);
   background: var(--panel-soft);
   cursor: pointer;
@@ -216,7 +260,7 @@
   height: 50px;
   place-items: center;
   margin-bottom: 5px;
-  border-radius: 14px;
+  border-radius: 0;
   color: var(--canvas);
   background: var(--accent-amber);
 }
@@ -239,7 +283,7 @@
   overflow: auto;
   gap: 19px;
   padding: 30px;
-  border-radius: 17px;
+  border-radius: 0;
   background: var(--panel);
   border: 1px solid var(--line);
   box-shadow: 10px 10px 0 rgba(0, 0, 0, 0.24);
@@ -264,6 +308,104 @@
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+.field-hint,
+.field-error {
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.field-hint {
+  color: var(--muted);
+}
+
+.field-error {
+  color: var(--accent-red);
+}
+
+.project-file-field,
+.project-resource-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  border: 1px solid var(--line);
+  padding: 13px;
+  background: var(--panel-soft);
+}
+
+.project-file-field > div:first-child,
+.project-resource-field > div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.project-file-field strong,
+.project-resource-field strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.project-file-field span,
+.project-resource-field span {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.project-file-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 7px;
+}
+
+.project-advanced {
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.project-advanced summary {
+  padding: 13px 0;
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.project-advanced-fields {
+  display: grid;
+  gap: 14px;
+  padding: 3px 0 16px;
+}
+
+.project-resource-list {
+  display: grid;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+}
+
+.project-resource-list > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border-bottom: 1px solid var(--line);
+  padding: 9px 11px;
+  color: var(--muted-strong);
+  font-size: 11px;
+}
+
+.project-resource-list button {
+  border: 0;
+  padding: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.project-resource-list button:hover {
+  color: var(--accent-red);
 }
 
 .modal-actions {

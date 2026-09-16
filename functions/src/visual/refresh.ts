@@ -1,58 +1,37 @@
-import { createHash } from "node:crypto";
-import { AggregateField } from "firebase-admin/firestore";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import {
   extractiveClipDescription,
   sanitizeClipSummary,
-  selectRepresentativeItems,
   selectTranscriptEvidence,
   type SanitizedClipSummary,
 } from "../clip-summary.js";
 import { extractGeminiResponseText } from "../gemini-response.js";
 import {
-  CLIP_SUMMARY_MAX_FRAMES,
-  CLIP_SUMMARY_MAX_TRANSCRIPT_CHARACTERS,
-  CLIP_SUMMARY_MAX_UTTERANCES,
   GEMINI_MODEL,
   REGION,
   VISUAL_ANALYSIS_VERSION,
   arrayStrings,
   database,
   geminiApiKey,
-  numeric,
   readableProviderError,
   requireGeminiClient,
   requireId,
   requireMember,
   requireRecord,
   requireUserId,
-  roundUsd,
   uniqueStrings,
   type SanitizedMomentAnalysis,
   type TranscriptEvidence,
-  type VisualFrameRecord,
 } from "../shared.js";
 import {
   completeUsageReservation,
-  estimateVisualCost,
   observedBatchCost,
-  releaseReservation,
-  reserveVisualUsage,
-  resolveVisualJob,
   visualReservationId,
 } from "../usage.js";
 import {
-  clipSummaryRequest,
-  groupVisualMoments,
-  partitionVisualMoments,
-  requireVisualFrame,
   transcriptEvidence,
-  visualMomentRequest,
-  visualPromptContext,
 } from "./requests.js";
 import {
-  emptyVisualMoment,
-  isAlreadyExistsError,
   momentHasEditorEdits,
   sanitizeMomentAnalysis,
   visualBatchDescriptors,

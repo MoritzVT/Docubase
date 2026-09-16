@@ -31,10 +31,6 @@ export const MAX_VISUAL_FRAME_BYTES = 100 * 1_024;
 export const TRANSCRIPT_SECTION_MAX_CHARACTERS = 2_400_000;
 export const TRANSCRIPT_REQUEST_MAX_BYTES = 12 * 1_024 * 1_024;
 export const TRANSCRIPT_REQUEST_MAX_ESTIMATED_TOKENS = 800_000;
-// Kept for collecting already-submitted Goal 3 jobs.
-export const CLIP_SUMMARY_MAX_FRAMES = 8;
-export const CLIP_SUMMARY_MAX_UTTERANCES = 60;
-export const CLIP_SUMMARY_MAX_TRANSCRIPT_CHARACTERS = 12_000;
 export const VISUAL_ANALYSIS_VERSION = "4";
 
 export type AnalysisMode = "batch" | "fast";

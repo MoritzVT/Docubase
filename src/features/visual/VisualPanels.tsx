@@ -1,25 +1,17 @@
-import {
-  Check,
-  ChevronDown,
-  ChevronUp,
-  Images,
-  LoaderCircle,
-  Sparkles,
-} from "lucide-react";
+import { LoaderCircle, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
-import { LoadingBlock, Notice } from "../../components/SharedUi";
+import { Notice } from "../../components/SharedUi";
 import type {
   AnalysisMode,
   ClipManifest,
   ClipVisualMetadata,
   ClipVisualSummary,
-  LocalProject,
   VisualFrame,
   VisualMoment,
 } from "../../lib/contracts";
 import { formatBytes } from "../../lib/format";
 import { posterSource } from "../../lib/native";
-import { formatUsd, readableError } from "../../lib/presentation";
+import { formatUsd } from "../../lib/presentation";
 import { clipTimecode } from "../../lib/timecode";
 
 export function VisualPanel({

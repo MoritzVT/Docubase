@@ -1,7 +1,6 @@
 import { createHash } from "node:crypto";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import {
-  MAX_VISUAL_FRAME_BYTES,
   REGION,
   VISUAL_MOMENT_DURATION_MS,
   arrayStrings,

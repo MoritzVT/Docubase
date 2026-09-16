@@ -2,10 +2,8 @@
 // Each endpoint's implementation lives with its feature.
 export { health } from "./health.js";
 export { deleteProject, uploadVisualFrame } from "./projects.js";
-export {
-  refreshVisualAnalysis,
-  submitVisualAnalysis,
-} from "./visual-analysis.js";
+export { refreshVisualAnalysis } from "./visual/refresh.js";
+export { submitVisualAnalysis } from "./visual/submit.js";
 export {
   cancelSearchIndex,
   estimateSearchIndex,

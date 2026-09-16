@@ -40,7 +40,7 @@
   gap: 18px;
   padding: 15px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--panel);
 }
 
@@ -98,7 +98,7 @@
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--field);
 }
 
@@ -124,7 +124,7 @@
 
 .visual-stats span,
 .tag-list span {
-  border-radius: 999px;
+  border-radius: 0;
   padding: 4px 8px;
   color: var(--accent-text);
   background: var(--accent-green-soft);
@@ -144,7 +144,7 @@
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 11px;
+  border-radius: 0;
   background: var(--panel);
 }
 
@@ -283,7 +283,6 @@
   color: var(--muted);
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 
 .analysis-mode-picker label {
@@ -293,7 +292,7 @@
   gap: 10px;
   min-width: 0;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: 0;
   padding: 12px;
   cursor: pointer;
 }

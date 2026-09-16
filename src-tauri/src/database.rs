@@ -21,9 +21,14 @@ pub(crate) fn initialize_database(path: &Path) -> Result<(), String> {
                 id TEXT PRIMARY KEY,
                 owner_id TEXT NOT NULL,
                 name TEXT NOT NULL,
+                summary TEXT NOT NULL DEFAULT '',
                 brief TEXT NOT NULL,
                 known_names_json TEXT NOT NULL,
                 terminology_json TEXT NOT NULL,
+                context_resource_names_json TEXT NOT NULL DEFAULT '[]',
+                context_text TEXT NOT NULL DEFAULT '',
+                thumbnail_path TEXT,
+                context_resource_paths_json TEXT NOT NULL DEFAULT '[]',
                 budget_per_footage_hour REAL NOT NULL,
                 member_ids_json TEXT NOT NULL,
                 created_at TEXT NOT NULL,
@@ -169,8 +174,38 @@ pub(crate) fn initialize_database(path: &Path) -> Result<(), String> {
         add_column_if_missing(&connection, "visual_clip_jobs", name, definition)?;
     }
     add_column_if_missing(&connection, "clips", "recorded_at", "TEXT")?;
+    add_column_if_missing(
+        &connection,
+        "projects",
+        "summary",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(
+        &connection,
+        "projects",
+        "context_resource_names_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
+    add_column_if_missing(
+        &connection,
+        "projects",
+        "context_text",
+        "TEXT NOT NULL DEFAULT ''",
+    )?;
+    add_column_if_missing(&connection, "projects", "thumbnail_path", "TEXT")?;
+    add_column_if_missing(
+        &connection,
+        "projects",
+        "context_resource_paths_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )?;
     add_column_if_missing(&connection, "clips", "source_modified_at", "TEXT")?;
-    add_column_if_missing(&connection, "transcription_jobs", "transcription_id", "TEXT")?;
+    add_column_if_missing(
+        &connection,
+        "transcription_jobs",
+        "transcription_id",
+        "TEXT",
+    )?;
     add_column_if_missing(&connection, "transcription_jobs", "language", "TEXT")?;
     backfill_source_modified_dates(&connection)?;
     Ok(())

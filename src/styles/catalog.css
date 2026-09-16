@@ -67,7 +67,7 @@
   gap: 2px;
   padding: 13px 16px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--panel);
 }
 
@@ -88,7 +88,7 @@
   margin: 13px 0;
   padding: 13px 15px;
   border: 1px solid var(--accent-blue);
-  border-radius: 10px;
+  border-radius: 0;
   color: var(--accent-text);
   background: var(--accent-blue-soft);
   font-size: 12px;
@@ -123,7 +123,7 @@
 .progress-panel.transcription progress {
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--progress-track);
 }
 
@@ -146,7 +146,7 @@
 .progress-panel.visual progress {
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--progress-track);
 }
 
@@ -168,7 +168,7 @@
   appearance: none;
   overflow: hidden;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--progress-track);
 }
 
@@ -177,7 +177,7 @@
 }
 
 .progress-panel.analysis-progress progress::-webkit-progress-value {
-  border-radius: 999px;
+  border-radius: 0;
   background: var(--accent-blue);
   transition: width 300ms ease;
 }
@@ -192,9 +192,9 @@
   margin-top: 14px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 13px;
+  border-radius: 0;
   background: var(--panel);
-  box-shadow: 5px 5px 0 rgba(0, 0, 0, 0.12);
+  box-shadow: none;
 }
 
 .catalog-toolbar {
@@ -234,7 +234,7 @@
   display: inline-flex;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--panel-soft);
 }
 
@@ -351,7 +351,7 @@
   min-height: 82px;
   overflow: hidden;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 0;
   background: var(--panel);
 }
 
@@ -388,7 +388,7 @@
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 999px;
+  border-radius: 0;
   padding: 3px 6px;
   color: var(--accent-text);
   background: var(--accent-blue-soft);
@@ -435,7 +435,7 @@
 }
 
 .search-result-tags span {
-  border-radius: 999px;
+  border-radius: 0;
   padding: 2px 6px;
   color: var(--accent-text);
   background: var(--accent-blue-soft);
@@ -466,7 +466,7 @@
   gap: 8px;
   min-height: 90px;
   border: 1px dashed var(--line-strong);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--muted);
   background: var(--panel);
   font-size: 11px;
@@ -512,9 +512,8 @@ th {
   background: var(--panel-soft);
   font-size: 9px;
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0;
   text-align: left;
-  text-transform: uppercase;
 }
 
 td {
@@ -543,7 +542,7 @@ tbody tr:hover {
   flex: 0 0 auto;
   overflow: hidden;
   place-items: center;
-  border-radius: 6px;
+  border-radius: 0;
   color: var(--muted);
   background: var(--panel-hover);
 }
@@ -604,7 +603,7 @@ tbody tr:hover {
 }
 
 .mini-tags em {
-  border-radius: 999px;
+  border-radius: 0;
   padding: 2px 6px;
   color: var(--accent-text);
   background: var(--accent-green-soft);
@@ -685,7 +684,7 @@ tbody tr:hover {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  border-radius: 999px;
+  border-radius: 0;
   padding: 4px 7px;
   color: var(--accent-text);
   background: var(--accent-green-soft);
@@ -704,7 +703,7 @@ tbody tr:hover {
   align-items: center;
   gap: 5px;
   border: 0;
-  border-radius: 999px;
+  border-radius: 0;
   padding: 5px 8px;
   color: var(--accent-text-strong);
   background: var(--accent-amber-soft);
@@ -793,7 +792,7 @@ tbody tr:hover {
 .transcript-empty {
   padding: 28px;
   border: 1px dashed var(--line-strong);
-  border-radius: 10px;
+  border-radius: 0;
   color: var(--muted);
   text-align: center;
   background: var(--panel);
@@ -805,7 +804,7 @@ tbody tr:hover {
   overflow: auto;
   gap: 1px;
   border: 1px solid var(--line);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--line);
 }
 
@@ -854,7 +853,7 @@ tbody tr:hover {
   gap: 12px;
   padding: 18px;
   border: 1px solid var(--accent-amber);
-  border-radius: 11px;
+  border-radius: 0;
   background: var(--accent-amber-soft);
 }
 
@@ -869,7 +868,6 @@ tbody tr:hover {
   color: var(--accent-text-strong);
   font-size: 11px;
   font-weight: 700;
-  text-transform: uppercase;
 }
 
 .cost-callout strong {

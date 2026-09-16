@@ -1,4 +1,4 @@
-import { AudioLines, ChevronDown, FileText, LoaderCircle } from "lucide-react";
+import { AudioLines, LoaderCircle } from "lucide-react";
 import { LoadingBlock, Notice } from "../../components/SharedUi";
 import type {
   ClipManifest,

@@ -176,9 +176,13 @@ export const submitVisualAnalysis = onCall(
       ).join("|"))
       .digest("hex")
       .slice(0, 20);
+    const contextSetHash = createHash("sha256")
+      .update(visualPromptContext(project, clip))
+      .digest("hex")
+      .slice(0, 20);
     const baseJobId = `clip-${createHash("sha256")
       .update(
-        `${projectId}:${clipId}:${frameSetHash}:${transcriptSetHash}:${VISUAL_ANALYSIS_VERSION}:${mode}:${JSON.stringify(INTERVIEW_ROUTING)}`,
+        `${projectId}:${clipId}:${frameSetHash}:${transcriptSetHash}:${contextSetHash}:${VISUAL_ANALYSIS_VERSION}:${mode}:${JSON.stringify(INTERVIEW_ROUTING)}`,
       )
       .digest("hex")
       .slice(0, 36)}`;

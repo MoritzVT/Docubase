@@ -364,34 +364,22 @@ pub(crate) async fn transcribe_audio_chunk(
             .map_err(string_error)?;
     }
 
-    let transcription = match transcribe_audio(
-        &app,
-        Path::new(&audio_path),
-        "en-US",
-        &contextual_terms,
-    )
-    .await
-    {
-        Ok(transcription) => transcription,
-        Err(error) => {
-            update_transcription_job(
-                &state,
-                &project_id,
-                &clip_id,
-                chunk_index,
-                "failed",
-                Some(&error),
-            )?;
-            return Err(error);
-        }
-    };
-    let saved = save_apple_transcript(
-        &state,
-        &project_id,
-        &clip_id,
-        chunk_index,
-        transcription,
-    );
+    let transcription =
+        match transcribe_audio(&app, Path::new(&audio_path), "en-US", &contextual_terms).await {
+            Ok(transcription) => transcription,
+            Err(error) => {
+                update_transcription_job(
+                    &state,
+                    &project_id,
+                    &clip_id,
+                    chunk_index,
+                    "failed",
+                    Some(&error),
+                )?;
+                return Err(error);
+            }
+        };
+    let saved = save_apple_transcript(&state, &project_id, &clip_id, chunk_index, transcription);
     if let Err(error) = &saved {
         let _ = update_transcription_job(
             &state,

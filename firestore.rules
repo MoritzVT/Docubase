@@ -29,12 +29,21 @@ service cloud.firestore {
       ]);
     }
 
+    function hasValidProjectContext(data) {
+      return (!data.keys().hasAny(["contextText"])
+          || (data.contextText is string && data.contextText.size() <= 12000))
+        && (!data.keys().hasAny(["contextResourceNames"])
+          || (data.contextResourceNames is list
+            && data.contextResourceNames.size() <= 20));
+    }
+
     match /projects/{projectId} {
       allow create: if signedIn()
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.memberIds is list
         && request.auth.uid in request.resource.data.memberIds
         && request.resource.data.memberIds.size() <= 50
+        && hasValidProjectContext(request.resource.data)
         && !request.resource.data.keys().hasAny(["usage"]);
 
       allow get, list: if signedIn()
@@ -44,11 +53,15 @@ service cloud.firestore {
         && request.resource.data.ownerId == resource.data.ownerId
         && request.resource.data.memberIds is list
         && request.resource.data.memberIds.size() <= 50
+        && hasValidProjectContext(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           "name",
+          "summary",
           "brief",
           "knownNames",
           "terminology",
+          "contextResourceNames",
+          "contextText",
           "budgetPerFootageHour",
           "memberIds",
           "updatedAt"

@@ -43,9 +43,12 @@ export const ProjectSchema = z.object({
   id: z.string().min(1),
   ownerId: z.string().min(1),
   name: z.string().trim().min(1).max(100),
+  summary: z.string().trim().max(120).default(""),
   brief: z.string().max(5000),
   knownNames: z.array(z.string().trim().min(1)).max(100),
   terminology: z.array(z.string().trim().min(1)).max(200),
+  contextResourceNames: z.array(z.string().trim().min(1)).max(20).default([]),
+  contextText: z.string().max(12_000).default(""),
   budgetPerFootageHour: z.number().positive(),
   memberIds: z.array(z.string().min(1)).min(1),
   createdAt: z.string().datetime(),
@@ -95,6 +98,8 @@ export type IngestEstimate = z.infer<typeof IngestEstimateSchema>;
 export const LocalProjectSchema = ProjectSchema.extend({
   clipCount: z.number().int().nonnegative().default(0),
   totalDurationMs: z.number().int().nonnegative().default(0),
+  thumbnailPath: z.string().nullable().default(null),
+  contextResourcePaths: z.array(z.string()).default([]),
 });
 export type LocalProject = z.infer<typeof LocalProjectSchema>;
 
@@ -433,11 +438,6 @@ export const SemanticSearchResponseSchema = z.object({
   indexUpdatedAt: z.string().datetime().nullable(),
 });
 export type SemanticSearchResponse = z.infer<typeof SemanticSearchResponseSchema>;
-
-export type CreateProjectInput = Pick<
-  Project,
-  "id" | "ownerId" | "name" | "brief" | "knownNames" | "terminology" | "budgetPerFootageHour"
->;
 
 export interface ImportProgress {
   completed: number;

@@ -175,10 +175,13 @@ export function visualPromptContext(
   project: FirebaseFirestore.DocumentData,
   clip: FirebaseFirestore.DocumentData,
 ): string {
+  const backgroundContext = String(project.contextText ?? "").slice(0, 12_000);
   return [
     `Project brief: ${String(project.brief ?? "").slice(0, 800) || "Not provided"}`,
     `Known names: ${arrayStrings(project.knownNames).slice(0, 30).join(", ").slice(0, 500) || "None"}`,
     `Terminology: ${arrayStrings(project.terminology).slice(0, 50).join(", ").slice(0, 800) || "None"}`,
+    "Project background may clarify names, terminology, and subject matter, but it is not evidence that anything is said or visible in this clip.",
+    `Project background: ${backgroundContext || "Not provided"}`,
     `Clip: ${String(clip.filename ?? "unknown").slice(0, 300)}`,
   ].join("\n");
 }
@@ -204,7 +207,7 @@ export function transcriptAnalysisRequest(
     "Analyze this documentary clip transcript for an editor. This request contains transcript evidence only; do not make visual claims.",
     sectionInstruction,
     "Use every supplied utterance as context, but summarize rather than quote. Determine, in order: the speech or footage format; the central subject; the main event, account, argument, or discussion; and important secondary subjects only when they materially distinguish the clip.",
-    "Ignore greetings, filler, false starts, interviewer logistics, production chatter, and repeated takes when they are not the subject. Do not invent facts or identify people unless supported by the transcript, known names, or project brief.",
+    "Ignore greetings, filler, false starts, interviewer logistics, production chatter, and repeated takes when they are not the subject. Project background may clarify vocabulary and names, but claims about this clip must remain supported by its transcript evidence.",
     "Write one concise sentence, or two only when necessary, using no more than 55 words. Never use vague phrases such as 'spoken documentary material'. Never quote isolated transcript fragments as the summary.",
     "Generate 6-15 concise keywords an editor might type to retrieve this clip. Prioritize supported names, organizations, subjects, events, locations, and specific concepts. Prefer fewer accurate keywords over speculative, generic, or redundant keywords.",
     "Return exactly one JSON object using these camelCase keys: summary, speechFormat, subjects, keywords, namedEntities, evidenceUtteranceIds, confidence. Cite only supplied utterance IDs.",
@@ -350,59 +353,6 @@ export function visualMomentPrompt(
   ].join("\n\n");
 }
 
-export async function clipSummaryRequest(
-  project: FirebaseFirestore.DocumentData,
-  clip: FirebaseFirestore.DocumentData,
-  frames: VisualFrameRecord[],
-  transcript: TranscriptEvidence[],
-): Promise<InlinedRequest> {
-  const imageParts = await Promise.all(
-    frames.map((frame) => visualImagePart(frame)),
-  );
-  const transcriptText =
-    transcript.length === 0
-      ? "No transcript evidence is available; describe the visual sequence only."
-      : transcript
-          .map(
-            (utterance) =>
-              `[${utterance.id}] ${utterance.speaker === null ? "Speaker" : `Speaker ${utterance.speaker + 1}`}: ${utterance.text}`,
-          )
-          .join("\n");
-  const prompt = [
-    "Write a short general description of this entire documentary clip for an editor.",
-    "Integrate the subject matter of the transcript with the setting, people, and actions visible across the representative frames.",
-    "Return one or two clear sentences, no more than 70 words. Lead with what the clip is broadly about, then add overall visual context only when useful.",
-    "Synthesize the transcript in your own words. Never quote it. Ignore greetings, filler, false starts, interviewer prompts, production chatter, and repeated takes.",
-    "Do not enumerate screenshots, describe individual frames one by one, mention evidence IDs in the description, or use vague phrases such as 'spoken documentary material'.",
-    "If the transcript contains no substantive topic, describe the clip type and broad visual content without inventing a subject.",
-    "Use a person's name only when the supplied transcript or project metadata supports it. Do not identify unnamed people from appearance.",
-    "Do not invent locations, relationships, intent, chronology, or story events. Cite only supplied frame and transcript IDs.",
-    "Return exactly one JSON object using these camelCase keys: description, tags, evidenceFrameIds, evidenceUtteranceIds, confidence.",
-    visualPromptContext(project, clip),
-    `Representative frame IDs in chronological order: ${frames.map((frame) => frame.id).join(", ")}`,
-    `Transcript evidence sampled across the clip:\n${transcriptText}`,
-  ].join("\n\n");
-  return {
-    contents: [
-      {
-        role: "user",
-        parts: [{ text: prompt }, ...imageParts],
-      },
-    ],
-    metadata: { requestType: "clipSummary", clipId: String(clip.id ?? "") },
-    config: {
-      temperature: 0.15,
-      maxOutputTokens: 400,
-      responseMimeType: "application/json",
-      responseSchema: clipSummaryResponseSchema(),
-      thinkingConfig: {
-        thinkingLevel: ThinkingLevel.MINIMAL,
-        includeThoughts: false,
-      },
-    },
-  };
-}
-
 export async function visualImagePart(
   frame: VisualFrameRecord,
 ): Promise<{ inlineData: { mimeType: string; data: string } }> {
@@ -414,34 +364,6 @@ export async function visualImagePart(
     inlineData: {
       mimeType: "image/jpeg",
       data: bytes.toString("base64"),
-    },
-  };
-}
-
-export function clipSummaryResponseSchema(): Schema {
-  const stringArray: Schema = {
-    type: Type.ARRAY,
-    items: { type: Type.STRING },
-  };
-  return {
-    type: Type.OBJECT,
-    required: [
-      "description",
-      "tags",
-      "evidenceFrameIds",
-      "evidenceUtteranceIds",
-      "confidence",
-    ],
-    properties: {
-      description: {
-        type: Type.STRING,
-        description:
-          "One or two clear sentences, at most 70 words, synthesizing the whole clip's subject and useful visual context without transcript quotations.",
-      },
-      tags: stringArray,
-      evidenceFrameIds: stringArray,
-      evidenceUtteranceIds: stringArray,
-      confidence: { type: Type.NUMBER, minimum: 0, maximum: 1 },
     },
   };
 }

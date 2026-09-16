@@ -12,7 +12,10 @@ mod visual;
 use catalog::{list_local_clips, relink_folder, reveal_clip, scan_folder};
 use database::initialize_database;
 use models::AppState;
-use projects::{delete_local_project, list_local_projects, upsert_local_project};
+use projects::{
+    delete_local_project, import_project_asset, list_local_projects, read_project_context,
+    upsert_local_project,
+};
 use transcription::{
     complete_transcription_chunk, extract_transcription_chunk, list_transcript_summaries,
     list_transcript_utterances, list_transcription_chunks, prepare_transcription,
@@ -30,7 +33,6 @@ mod tests;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .setup(|app| {
             let database_directory = app
@@ -55,6 +57,8 @@ pub fn run() {
             upsert_local_project,
             list_local_projects,
             delete_local_project,
+            import_project_asset,
+            read_project_context,
             list_local_clips,
             scan_folder,
             relink_folder,

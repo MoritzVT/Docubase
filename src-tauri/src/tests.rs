@@ -4,9 +4,7 @@ use rusqlite::{params, Connection};
 
 use crate::catalog::{is_supported_video, sampled_fingerprint};
 use crate::database::{connection, initialize_database};
-use crate::models::{
-    AppState, WorkerSpeechSegment, WorkerSpeechTranscription, WorkerSpeechWord,
-};
+use crate::models::{AppState, WorkerSpeechSegment, WorkerSpeechTranscription, WorkerSpeechWord};
 use crate::projects::delete_local_project_inner;
 use crate::transcription::{
     save_apple_transcript, transcript_chunk_payload_inner, transcription_chunk,

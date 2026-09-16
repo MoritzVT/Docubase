@@ -178,7 +178,7 @@ p {
   width: min(100%, 470px);
   padding: 38px;
   border: 1px solid var(--line);
-  border-radius: 20px;
+  border-radius: 0;
   background: var(--panel);
   box-shadow: var(--shadow);
 }
@@ -193,7 +193,7 @@ p {
   display: block;
   margin: 20px 0;
   padding: 13px 15px;
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--ink);
   background: var(--panel-soft);
   font-family: "SFMono-Regular", Consolas, monospace;
@@ -263,8 +263,7 @@ p {
   color: var(--accent-text);
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: 0.13em;
-  text-transform: uppercase;
+  letter-spacing: 0;
 }
 
 .muted {
@@ -344,7 +343,7 @@ input,
 textarea {
   width: 100%;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 0;
   color: var(--ink);
   background: var(--field);
   font-size: 14px;
@@ -374,7 +373,7 @@ textarea::placeholder {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border-radius: 9px;
+  border-radius: 0;
   padding: 0 17px;
   font-size: 13px;
   font-weight: 700;
@@ -441,7 +440,7 @@ textarea::placeholder {
   width: min(100%, 820px);
   max-width: 100%;
   border: 1px solid;
-  border-radius: 9px;
+  border-radius: 0;
   padding: 11px 14px;
   font-size: 13px;
   line-height: 1.45;
@@ -478,7 +477,7 @@ textarea::placeholder {
   justify-content: space-between;
   gap: 12px;
   border: 1px solid var(--line);
-  border-radius: 9px;
+  border-radius: 0;
   padding: 0 10px 0 12px;
   color: var(--ink);
   background: var(--field);
@@ -513,7 +512,7 @@ textarea::placeholder {
   gap: 3px;
   padding: 6px;
   border: 1px solid var(--line-strong);
-  border-radius: 11px;
+  border-radius: 0;
   color: var(--ink);
   background: var(--panel-raised);
   box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.2);
@@ -525,7 +524,7 @@ textarea::placeholder {
   align-items: center;
   justify-content: space-between;
   gap: 20px;
-  border-radius: 7px;
+  border-radius: 0;
   padding: 7px 9px;
   color: var(--muted-strong);
   cursor: pointer;

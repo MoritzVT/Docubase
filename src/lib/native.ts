@@ -33,6 +33,44 @@ export async function chooseFolder(): Promise<string | null> {
   return typeof selection === "string" ? selection : null;
 }
 
+export async function chooseProjectThumbnail(): Promise<string | null> {
+  if (!isTauri) return null;
+  const selection = await open({
+    multiple: false,
+    title: "Choose a project thumbnail",
+    filters: [{ name: "Images", extensions: ["jpg", "jpeg", "png", "webp"] }],
+  });
+  return typeof selection === "string" ? selection : null;
+}
+
+export async function chooseContextTextFiles(): Promise<string[]> {
+  if (!isTauri) return [];
+  const selection = await open({
+    multiple: true,
+    title: "Add contextual text files",
+    filters: [{ name: "Plain text", extensions: ["txt"] }],
+  });
+  if (Array.isArray(selection)) return selection;
+  return typeof selection === "string" ? [selection] : [];
+}
+
+export async function importProjectAsset(
+  projectId: string,
+  sourcePath: string,
+  assetType: "thumbnail" | "context_text",
+): Promise<string> {
+  if (!isTauri) throw new Error("Project file attachments require the desktop app.");
+  return invoke("import_project_asset", { projectId, sourcePath, assetType });
+}
+
+export async function readProjectContext(
+  projectId: string,
+  paths: string[],
+): Promise<string> {
+  if (!isTauri) return "";
+  return invoke("read_project_context", { projectId, paths });
+}
+
 export async function upsertLocalProject(
   project: LocalProject,
 ): Promise<void> {
