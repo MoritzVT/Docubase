@@ -134,9 +134,10 @@ export const deleteProject = onCall(
     const projectId = requireId(data.projectId, "projectId");
     const confirmedName = String(data.confirmedName ?? "");
     const projectReference = database.doc(`projects/${projectId}`);
-    const [projectSnapshot, jobsSnapshot] = await Promise.all([
+    const [projectSnapshot, jobsSnapshot, searchJobsSnapshot] = await Promise.all([
       projectReference.get(),
       projectReference.collection("visualJobs").get(),
+      projectReference.collection("searchIndexJobs").get(),
     ]);
     const project = requireProjectOwner(projectSnapshot.data(), userId);
     if (
@@ -149,8 +150,13 @@ export const deleteProject = onCall(
       );
     }
 
+    const searchBatchSnapshots = await Promise.all(
+      searchJobsSnapshot.docs.map((snapshot) =>
+        snapshot.ref.collection("batches").get()),
+    );
     const activeBatchNames = uniqueStrings(
-      jobsSnapshot.docs.flatMap((snapshot) => {
+      [
+        ...jobsSnapshot.docs.flatMap((snapshot) => {
         const job = snapshot.data();
         if (!["pending", "running"].includes(String(job.state))) return [];
         if (job.analysisMode === "fast") return [];
@@ -158,7 +164,14 @@ export const deleteProject = onCall(
           String(job.batchName ?? ""),
           ...arrayStrings(job.batchNames),
         ];
-      }),
+        }),
+        ...searchBatchSnapshots.flatMap((snapshot) =>
+          snapshot.docs.flatMap((document) =>
+            TERMINAL_SEARCH_STATES.has(String(document.data().state))
+              ? []
+              : [String(document.data().batchName ?? "")],
+          )),
+      ],
       10_000,
     );
     let canceledBatchCount = 0;
@@ -181,3 +194,10 @@ export const deleteProject = onCall(
     };
   },
 );
+
+const TERMINAL_SEARCH_STATES = new Set([
+  "JOB_STATE_SUCCEEDED",
+  "JOB_STATE_FAILED",
+  "JOB_STATE_CANCELLED",
+  "JOB_STATE_EXPIRED",
+]);

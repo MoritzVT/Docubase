@@ -383,6 +383,57 @@ export interface DeleteProjectResponse {
   uncanceledBatchCount: number;
 }
 
+export const SearchScopeSchema = z.enum(["all", "visual", "spoken"]);
+export type SearchScope = z.infer<typeof SearchScopeSchema>;
+
+export const SearchIndexStatusSchema = z.object({
+  jobId: z.string().min(1).nullable(),
+  mode: AnalysisModeSchema.default("batch"),
+  state: z.enum(["not_started", "pending", "running", "complete", "failed"]),
+  totalRecords: z.number().int().nonnegative(),
+  embeddedRecords: z.number().int().nonnegative(),
+  completedBatches: z.number().int().nonnegative(),
+  totalBatches: z.number().int().nonnegative(),
+  estimatedCostUsd: z.number().nonnegative(),
+  recordedCostUsd: z.number().nonnegative().default(0),
+  error: z.string().nullable(),
+  updatedAt: z.string().datetime().nullable(),
+});
+export type SearchIndexStatus = z.infer<typeof SearchIndexStatusSchema>;
+
+export const SearchIndexEstimateSchema = z.object({
+  totalRecords: z.number().int().nonnegative(),
+  estimatedTokens: z.number().int().nonnegative(),
+  batchCostUsd: z.number().nonnegative(),
+  fastCostUsd: z.number().nonnegative(),
+});
+export type SearchIndexEstimate = z.infer<typeof SearchIndexEstimateSchema>;
+
+export const SemanticSearchResultSchema = z.object({
+  id: z.string().min(1),
+  kind: z.enum(["clip", "visual", "spoken"]),
+  clipId: z.string().min(1),
+  filename: z.string().min(1),
+  description: z.string(),
+  tags: z.array(z.string()),
+  startMs: z.number().int().nonnegative(),
+  endMs: z.number().int().nonnegative(),
+  frameIds: z.array(z.string()),
+  utteranceIds: z.array(z.string()),
+  thumbnailStoragePath: z.string().nullable(),
+  score: z.number().min(0).max(1),
+  exactFilename: z.boolean(),
+});
+export type SemanticSearchResult = z.infer<typeof SemanticSearchResultSchema>;
+
+export const SemanticSearchResponseSchema = z.object({
+  query: z.string(),
+  scope: SearchScopeSchema,
+  results: z.array(SemanticSearchResultSchema),
+  indexUpdatedAt: z.string().datetime().nullable(),
+});
+export type SemanticSearchResponse = z.infer<typeof SemanticSearchResponseSchema>;
+
 export type CreateProjectInput = Pick<
   Project,
   "id" | "ownerId" | "name" | "brief" | "knownNames" | "terminology" | "budgetPerFootageHour"

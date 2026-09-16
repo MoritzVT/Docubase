@@ -387,6 +387,33 @@ describe("Docubase Firestore rules", () => {
     );
   });
 
+  it("keeps semantic vectors and indexing jobs behind callable functions", async () => {
+    await seedProject(["owner", "editor"]);
+    await environment.withSecurityRulesDisabled(async (context) => {
+      await setDoc(
+        doc(context.firestore(), "projects", "film", "searchDocuments", "clip-a"),
+        { clipId: "clip-a", kind: "clip", embedding: [0.1, 0.2] },
+      );
+      await setDoc(
+        doc(context.firestore(), "projects", "film", "searchIndexJobs", "job-a"),
+        { state: "running" },
+      );
+    });
+    const database = environment.authenticatedContext("editor").firestore();
+    await assertFails(
+      getDoc(doc(database, "projects", "film", "searchDocuments", "clip-a")),
+    );
+    await assertFails(
+      setDoc(doc(database, "projects", "film", "searchDocuments", "forged"), {
+        clipId: "clip-a",
+        kind: "clip",
+      }),
+    );
+    await assertFails(
+      getDoc(doc(database, "projects", "film", "searchIndexJobs", "job-a")),
+    );
+  });
+
   it("rejects all direct client Storage access", async () => {
     await seedProject(["owner", "editor"]);
     const bytes = new Uint8Array([0xff, 0xd8, 0xff, 0xd9]);

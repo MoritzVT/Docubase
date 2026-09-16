@@ -32,8 +32,8 @@ The next analysis-quality refinement is specified in
 - No transcription provider credentials, audio upload, or provider charge.
 - Local SQLite transcript storage plus member-protected transcript sync to
   Firestore.
-- Expandable transcript rows, timecodes, highlighted spoken-word search,
-  per-clip retry, and a local-processing confirmation.
+- Expandable transcript rows, timecodes, and highlighted local quote matching.
+- Per-clip retry and a local-processing confirmation.
 - Interruption recovery that reuses an extracted chunk or resumes its Firestore
   sync without repeating already completed chunks.
 - Automatic deletion of each temporary audio chunk after its transcript has
@@ -76,6 +76,18 @@ The next analysis-quality refinement is specified in
   duplicate-submission protection, atomic cost reservations, preservation of
   editor changes, and reconciliation against all observed Batch token usage.
 - No face detection, face embeddings, or face clustering.
+
+## Goal 4 features
+
+- Gemini Embedding 2 semantic search across clip summaries, visual moments,
+  tags, and 45-second transcript passages, with All/Visual/Spoken scopes,
+  exact-filename pinning, evidence thumbnails, quotes, and source timecodes.
+- Discounted asynchronous Batch indexing with visible completed/total progress;
+  each submitted search uses one standard query embedding.
+- Firestore Enterprise cosine vector search behind authenticated callables.
+  Search staging data and stored vectors cannot be read directly by clients.
+- Explicit Search submission avoids spending query tokens while typing, and an
+  index can be safely rebuilt after clip analysis or editor metadata changes.
 
 ## Prerequisites
 

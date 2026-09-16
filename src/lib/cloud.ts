@@ -9,6 +9,7 @@ import {
 } from "firebase/firestore";
 import { httpsCallable } from "firebase/functions";
 import type {
+  AnalysisMode,
   ClipManifest,
   ClipVisualMetadata,
   Project,
@@ -17,12 +18,19 @@ import type {
   VisualFrameDocument,
   VisualMoment,
   DeleteProjectResponse,
+  SearchIndexStatus,
+  SearchIndexEstimate,
+  SearchScope,
+  SemanticSearchResponse,
 } from "./contracts";
 import {
   ClipVisualMetadataSchema,
   ProjectSchema,
   VisualAnalysisJobSchema,
   VisualMomentSchema,
+  SearchIndexStatusSchema,
+  SearchIndexEstimateSchema,
+  SemanticSearchResponseSchema,
 } from "./contracts";
 import { requireDb, requireFunctions } from "./firebase";
 
@@ -262,4 +270,69 @@ export async function listVisualAnalysisJobs(
     .filter((result) => result.success)
     .map((result) => result.data)
     .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+}
+
+export async function getSearchIndexStatus(
+  projectId: string,
+): Promise<SearchIndexStatus> {
+  const callable = httpsCallable<{ projectId: string }, unknown>(
+    requireFunctions(),
+    "getSearchIndexStatus",
+  );
+  return SearchIndexStatusSchema.parse((await callable({ projectId })).data);
+}
+
+export async function cancelSearchIndex(
+  projectId: string,
+): Promise<SearchIndexStatus> {
+  const callable = httpsCallable<{ projectId: string }, unknown>(
+    requireFunctions(),
+    "cancelSearchIndex",
+  );
+  return SearchIndexStatusSchema.parse((await callable({ projectId })).data);
+}
+
+export async function estimateSearchIndex(
+  projectId: string,
+): Promise<SearchIndexEstimate> {
+  const callable = httpsCallable<{ projectId: string }, unknown>(
+    requireFunctions(),
+    "estimateSearchIndex",
+  );
+  return SearchIndexEstimateSchema.parse((await callable({ projectId })).data);
+}
+
+export async function startSearchIndex(
+  projectId: string,
+  mode: AnalysisMode,
+): Promise<SearchIndexStatus> {
+  const callable = httpsCallable<{ projectId: string; mode: AnalysisMode }, unknown>(
+    requireFunctions(),
+    "startSearchIndex",
+  );
+  return SearchIndexStatusSchema.parse((await callable({ projectId, mode })).data);
+}
+
+export async function refreshSearchIndex(
+  projectId: string,
+): Promise<SearchIndexStatus> {
+  const callable = httpsCallable<{ projectId: string }, unknown>(
+    requireFunctions(),
+    "refreshSearchIndex",
+  );
+  return SearchIndexStatusSchema.parse((await callable({ projectId })).data);
+}
+
+export async function searchProject(
+  projectId: string,
+  query: string,
+  scope: SearchScope,
+): Promise<SemanticSearchResponse> {
+  const callable = httpsCallable<
+    { projectId: string; query: string; scope: SearchScope; limit: number },
+    unknown
+  >(requireFunctions(), "searchProject");
+  return SemanticSearchResponseSchema.parse(
+    (await callable({ projectId, query, scope, limit: 20 })).data,
+  );
 }

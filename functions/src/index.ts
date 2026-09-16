@@ -6,3 +6,11 @@ export {
   refreshVisualAnalysis,
   submitVisualAnalysis,
 } from "./visual-analysis.js";
+export {
+  cancelSearchIndex,
+  estimateSearchIndex,
+  getSearchIndexStatus,
+  refreshSearchIndex,
+  searchProject,
+  startSearchIndex,
+} from "./semantic-search.js";

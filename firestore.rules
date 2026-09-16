@@ -191,6 +191,18 @@ service cloud.firestore {
       match /usageReservations/{reservationId} {
         allow read, write: if false;
       }
+
+      match /searchDocuments/{documentId} {
+        allow read, write: if false;
+      }
+
+      match /searchIndexJobs/{jobId} {
+        allow read, write: if false;
+
+        match /{document=**} {
+          allow read, write: if false;
+        }
+      }
     }
   }
 }

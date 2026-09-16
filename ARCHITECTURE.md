@@ -31,8 +31,9 @@ the first pass.
 5. [`src/features/catalog/CatalogScreen.tsx`](./src/features/catalog/CatalogScreen.tsx)
    renders one project's footage catalog and connects user actions to workflows.
 6. [`src/features/catalog/useTranscriptionWorkflow.ts`](./src/features/catalog/useTranscriptionWorkflow.ts)
-   and [`useVisualWorkflow.ts`](./src/features/catalog/useVisualWorkflow.ts)
-   contain the two long-running workflows.
+   [`useVisualWorkflow.ts`](./src/features/catalog/useVisualWorkflow.ts), and
+   [`useSemanticSearch.ts`](./src/features/catalog/useSemanticSearch.ts)
+   contain the long-running workflows.
 7. [`src/lib/native.ts`](./src/lib/native.ts) is the typed TypeScript boundary
    to Rust. [`src/lib/cloud.ts`](./src/lib/cloud.ts) is the boundary to Firebase.
 8. [`src-tauri/src/lib.rs`](./src-tauri/src/lib.rs) registers the Rust commands.
@@ -133,6 +134,9 @@ its JSON response, keeping Apple-specific code out of the rest of the app.
   model output.
 - `budget.ts`, `clip-summary.ts`, and `gemini-response.ts` are pure domain
   helpers with direct tests.
+- `semantic-search.ts` owns authenticated batch indexing and vector retrieval;
+  `search-core.ts` contains the transcript-window and embedding-text rules that
+  can be tested without Firebase.
 
 Cloud Functions are security and billing boundaries for Gemini and protected
 thumbnail storage. Membership checks, upload validation, and visual-analysis
@@ -174,6 +178,23 @@ cost reservations belong here rather than in the desktop UI.
 7. The UI shows the merged result and can disclose separate transcript and
    visual provenance.
 
+### Semantic search
+
+1. The editor explicitly builds or updates a project's search index.
+2. The function reads completed clip descriptions/tags, visual moments, and the
+   complete timestamped transcript, then groups speech into roughly 45-second
+   passages.
+3. Each source becomes a retrieval-formatted Gemini Embedding 2 document.
+   Discounted Batch jobs create separate 768-dimensional vectors and report
+   completed/total job progress.
+4. Completed vectors are written to the protected `searchDocuments`
+   subcollection; stale documents are removed only after the rebuild succeeds.
+5. A submitted query creates one standard embedding. Firestore Enterprise
+   cosine search ranks All, Visual, or Spoken evidence, while an exact filename
+   lookup is pinned in All.
+6. The frontend renders the original stored evidence with a protected/local
+   thumbnail, quote or description, tags, exact timecode, and Reveal in Finder.
+
 ## Important invariants
 
 - Original video is never uploaded or copied into Docubase storage.
@@ -188,6 +209,9 @@ cost reservations belong here rather than in the desktop UI.
 - Model output is untrusted input. Cloud validation must resolve every evidence
   ID against evidence that was actually supplied.
 - User-edited descriptions and tags take precedence over generated defaults.
+- Search results never contain generated prose: every displayed description,
+  tag, quote, filename, thumbnail reference, and timestamp comes from indexed
+  project evidence.
 
 ## Changing a cross-layer type
 

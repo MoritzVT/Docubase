@@ -237,12 +237,43 @@ editor-override preservation, and legacy Goal 3 rebuild controls.
 
 ### Goal 4 — Grounded hybrid search
 
-Add text/image embeddings, Enterprise full-text and vector indexes, the
-backend-owned `searchProject` contract, reciprocal-rank fusion, All/Visual/
-Spoken/Filename scopes, category filters, evidence thumbnails, transcript
-quotes, precise timestamps, and source timecode. Goal 4 is usable as the core
-documentary retrieval product and is accepted against the gold query set and
-latency/relevance targets above.
+Status: implemented and deployed to `docubase-455a4`; real-footage relevance
+calibration remains ongoing.
+
+The first usable search release deliberately uses one strong retrieval path
+instead of a more complicated fusion system. Gemini Embedding 2 creates
+768-dimensional vectors for clip descriptions/tags, visual-moment
+descriptions/tags, and non-overlapping transcript passages targeting 45
+seconds. Firestore Enterprise performs cosine nearest-neighbor search behind
+the authenticated `searchProject` callable.
+
+Implemented scope:
+
+- Index creation uses Gemini Batch embeddings at the discounted batch rate,
+  divides large projects into bounded jobs, persists measurable progress, and
+  can finish after the desktop app closes.
+- Each user search creates exactly one standard query embedding. All, Visual,
+  and Spoken scopes use the same query vector; exact case-insensitive filename
+  matches are pinned above semantic results in All.
+- Every result is direct stored evidence: filename, clip/moment description or
+  transcript quote, tags, retained thumbnail when available, relevance score,
+  clip-relative timestamp, and source timecode. No generative model rewrites
+  search results.
+- Original footage and local paths remain on the Mac. The search index contains
+  only the descriptions, keywords, transcript passages, evidence identifiers,
+  timestamps, protected thumbnail paths, and vectors already needed for
+  retrieval.
+- Search documents and staging jobs are server-only. Callables enforce project
+  membership, indexing is owner-controlled, stale vectors are removed after a
+  successful rebuild, and project deletion cancels active search batches.
+- The desktop UI does not spend query tokens while the editor types. Search is
+  submitted explicitly, index progress reports completed/total batches, and a
+  ready index can be rebuilt after analysis or editorial metadata changes.
+
+Deferred search refinements include full-text typo tolerance, category filters,
+person confirmation, learned ranking/fusion, and evaluation against the larger
+gold query set described above. These are quality extensions rather than
+requirements for the usable semantic-search slice.
 
 ### Goal 5 — Scale, collaboration, and distribution
 

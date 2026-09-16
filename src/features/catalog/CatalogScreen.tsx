@@ -12,7 +12,9 @@ import {
   LoaderCircle,
   RefreshCw,
   Search,
+  Sparkles,
   TriangleAlert,
+  X,
 } from "lucide-react";
 import type { User } from "firebase/auth";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
@@ -52,6 +54,9 @@ import {
 } from "../visual/VisualPanels";
 import { useTranscriptionWorkflow } from "./useTranscriptionWorkflow";
 import { useVisualWorkflow } from "./useVisualWorkflow";
+import { useSemanticSearch } from "./useSemanticSearch";
+import { SearchResults } from "./SearchResults";
+import { SearchIndexDialog } from "./SearchIndexDialog";
 import type { CatalogNotice } from "./types";
 
 type DateSortField = "recordedAt" | "createdAt" | "sourceModifiedAt";
@@ -101,6 +106,7 @@ export function CatalogScreen({
     "ascending",
   );
   const [dateSortField, setDateSortField] = useState<DateSortField>("recordedAt");
+  const [searchIndexDialogOpen, setSearchIndexDialogOpen] = useState(false);
 
   const {
     transcriptSummaries,
@@ -142,6 +148,8 @@ export function CatalogScreen({
     analysisProgress,
     recordedVisualCost,
   } = useVisualWorkflow(project, clips, transcriptSummaries, setNotice);
+
+  const semanticSearch = useSemanticSearch(project.id, setNotice);
 
   const refreshClips = useCallback(async () => {
     setLoading(true);
@@ -195,6 +203,11 @@ export function CatalogScreen({
     const transcriptClipIds = new Set(
       transcriptMatches.map((match) => match.clipId),
     );
+    const semanticClipIds = new Set(
+      semanticSearch.submittedQuery === query.trim()
+        ? semanticSearch.results.map((result) => result.clipId)
+        : [],
+    );
     const filtered = !normalized && visualFilter === "all" ? clips : clips.filter((clip) => {
       const visual = visualMetadata[clip.id];
       const matchesVisualFilter =
@@ -218,7 +231,9 @@ export function CatalogScreen({
         ]
           .join(" ")
           .toLocaleLowerCase()
-          .includes(normalized) || transcriptClipIds.has(clip.id)
+          .includes(normalized) ||
+        transcriptClipIds.has(clip.id) ||
+        semanticClipIds.has(clip.id)
       );
     });
     return [...filtered].sort((left, right) => {
@@ -240,6 +255,8 @@ export function CatalogScreen({
     transcriptMatches,
     visualFilter,
     visualMetadata,
+    semanticSearch.results,
+    semanticSearch.submittedQuery,
   ]);
 
   const totalDuration = clips.reduce(
@@ -250,6 +267,8 @@ export function CatalogScreen({
     (sum, clip) => sum + clip.fileSizeBytes,
     0,
   );
+  const recordedTotalCost =
+    recordedVisualCost + (semanticSearch.status?.recordedCostUsd ?? 0);
 
   async function importFolder() {
     const folderPath = await chooseFolder();
@@ -396,7 +415,7 @@ export function CatalogScreen({
           <Metric value={clips.length.toLocaleString()} label="clips" />
           <Metric value={formatDuration(totalDuration)} label="footage" />
           <Metric value={formatBytes(totalBytes)} label="source drives" />
-          <Metric value={formatUsd(recordedVisualCost)} label="visual AI" />
+          <Metric value={formatUsd(recordedTotalCost)} label="total cost" />
         </div>
       </section>
 
@@ -465,15 +484,70 @@ export function CatalogScreen({
 
       <section className="catalog-panel">
         <div className="catalog-toolbar">
-          <label className="search-box">
-            <Search size={17} />
-            <input
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="Search names, descriptions, tags, or spoken words"
-              value={query}
-            />
-          </label>
+          <form
+            className="semantic-search-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void semanticSearch.runSearch(query);
+            }}
+          >
+            <label className="search-box">
+              <Search size={17} />
+              <input
+                onChange={(event) => setQuery(event.target.value)}
+                placeholder="Describe a shot, topic, quote, or filename"
+                value={query}
+              />
+            </label>
+            <div className="search-scopes" aria-label="Search scope">
+              {(["all", "visual", "spoken"] as const).map((scope) => (
+                <button
+                  aria-pressed={semanticSearch.scope === scope}
+                  key={scope}
+                  onClick={() => semanticSearch.setScope(scope)}
+                  type="button"
+                >
+                  {scope}
+                </button>
+              ))}
+            </div>
+            <button
+              className="primary-button compact semantic-search-button"
+              disabled={
+                semanticSearch.searching ||
+                semanticSearch.status?.state !== "complete" ||
+                query.trim().length < 2
+              }
+              type="submit"
+            >
+              {semanticSearch.searching ? (
+                <LoaderCircle className="spin" size={15} />
+              ) : (
+                <Sparkles size={15} />
+              )}
+              Search
+            </button>
+          </form>
           <div className="catalog-filters">
+            <button
+              className="secondary-button compact"
+              disabled={
+                semanticSearch.indexing ||
+                ["pending", "running"].includes(semanticSearch.status?.state ?? "")
+              }
+              onClick={() => {
+                setSearchIndexDialogOpen(true);
+                void semanticSearch.prepareIndex();
+              }}
+              type="button"
+            >
+              {semanticSearch.indexing ? <LoaderCircle className="spin" size={14} /> : null}
+              {semanticSearch.status?.state === "complete" ? "Update search index" :
+                semanticSearch.status?.state === "failed" ? "Retry search index" :
+                  ["pending", "running"].includes(semanticSearch.status?.state ?? "")
+                    ? "Indexing…"
+                    : "Build search index"}
+            </button>
             <SelectMenu
               ariaLabel="Visual category"
               className="catalog-filter-menu"
@@ -486,6 +560,65 @@ export function CatalogScreen({
             </span>
           </div>
         </div>
+
+        {semanticSearch.status && ["pending", "running"].includes(semanticSearch.status.state) && (
+          <div className="search-index-progress">
+            <span>
+              {semanticSearch.status.mode === "fast"
+                ? `Fast indexing: ${semanticSearch.status.embeddedRecords} of ${semanticSearch.status.totalRecords} search records embedded`
+                : `Batch indexing: ${semanticSearch.status.completedBatches} of ${semanticSearch.status.totalBatches} embedding batches complete`}
+            </span>
+            <div className="search-index-progress-actions">
+              <strong>
+                {semanticSearch.status.mode === "fast" && semanticSearch.status.totalRecords > 0
+                ? Math.round(
+                    semanticSearch.status.embeddedRecords /
+                    semanticSearch.status.totalRecords * 100,
+                  )
+                : semanticSearch.status.totalBatches > 0
+                ? Math.round(
+                    semanticSearch.status.completedBatches /
+                    semanticSearch.status.totalBatches * 100,
+                  )
+                  : 0}%
+              </strong>
+              <button
+                className="secondary-button compact"
+                disabled={semanticSearch.canceling}
+                onClick={() => void semanticSearch.cancelIndex()}
+                type="button"
+              >
+                {semanticSearch.canceling
+                  ? <LoaderCircle className="spin" size={13} />
+                  : <X size={13} />}
+                Cancel indexing
+              </button>
+            </div>
+            <progress
+              max={Math.max(
+                semanticSearch.status.mode === "fast"
+                  ? semanticSearch.status.totalRecords
+                  : semanticSearch.status.totalBatches,
+                1,
+              )}
+              value={semanticSearch.status.mode === "fast"
+                ? semanticSearch.status.embeddedRecords
+                : semanticSearch.status.completedBatches}
+            />
+          </div>
+        )}
+        {semanticSearch.status?.state === "failed" && (
+          <div className="search-index-error">{semanticSearch.status.error}</div>
+        )}
+        {semanticSearch.submittedQuery && semanticSearch.submittedQuery === query.trim() && (
+          <SearchResults
+            clips={clips}
+            framesByClip={visualFramesByClip}
+            projectId={project.id}
+            query={semanticSearch.submittedQuery}
+            results={semanticSearch.results}
+          />
+        )}
 
         {loading ? (
           <LoadingBlock label="Reading the local catalog…" />
@@ -784,6 +917,19 @@ export function CatalogScreen({
           onAnalysisModeChange={setAnalysisMode}
           onConfirm={() => void analyzePreparedVisuals()}
           retainedBytes={visualPreflight.retainedBytes}
+        />
+      )}
+      {searchIndexDialogOpen && (
+        <SearchIndexDialog
+          estimate={semanticSearch.estimate}
+          estimating={semanticSearch.estimating}
+          mode={semanticSearch.indexMode}
+          onCancel={() => setSearchIndexDialogOpen(false)}
+          onConfirm={() => {
+            setSearchIndexDialogOpen(false);
+            void semanticSearch.buildIndex(semanticSearch.indexMode);
+          }}
+          onModeChange={semanticSearch.setIndexMode}
         />
       )}
     </main>
