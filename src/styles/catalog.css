@@ -132,9 +132,8 @@
 }
 
 .progress-panel.transcription progress::-webkit-progress-value {
-  width: 35% !important;
   background: var(--accent-amber);
-  animation: indeterminate 1.6s ease-in-out infinite alternate;
+  transition: width 300ms ease;
 }
 
 .progress-panel.visual {
@@ -155,9 +154,8 @@
 }
 
 .progress-panel.visual progress::-webkit-progress-value {
-  width: 35% !important;
   background: var(--accent-blue);
-  animation: indeterminate 1.6s ease-in-out infinite alternate;
+  transition: width 300ms ease;
 }
 
 .progress-panel.analysis-progress {

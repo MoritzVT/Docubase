@@ -19,6 +19,12 @@ import {
 import { readableError } from "../../lib/presentation";
 import type { CatalogNotice } from "./types";
 
+type TranscriptionProgress = {
+  message: string;
+  completed: number;
+  total: number;
+};
+
 export function useTranscriptionWorkflow(
   project: LocalProject,
   clips: ClipManifest[],
@@ -40,7 +46,7 @@ export function useTranscriptionWorkflow(
     null,
   );
   const [transcriptionProgress, setTranscriptionProgress] = useState<
-    string | null
+    TranscriptionProgress | null
   >(null);
   const [transcriptionDialogOpen, setTranscriptionDialogOpen] = useState(false);
 
@@ -86,16 +92,33 @@ export function useTranscriptionWorkflow(
     }
   }
 
-  async function processClipTranscription(clip: ClipManifest) {
+  async function processClipTranscription(
+    clip: ClipManifest,
+    clipPosition = 0,
+    clipTotal = 1,
+  ) {
+    const total = Math.max(clipTotal, 1) * 100;
+    const clipStart = clipPosition * 100;
+    const updateProgress = (message: string, clipFraction: number) => {
+      setTranscriptionProgress({
+        message,
+        completed: clipStart + Math.max(0, Math.min(1, clipFraction)) * 100,
+        total,
+      });
+    };
+    updateProgress(`${clip.filename}: preparing transcript`, 0);
     let chunks = await prepareTranscription(project.id, clip.id);
     for (let position = 0; position < chunks.length; position += 1) {
       let chunk = chunks[position];
       if (chunk.stage === "complete") continue;
+      const chunkProgress = (phase: number) =>
+        (position + phase) / Math.max(chunks.length, 1);
 
       let payload;
       if (chunk.stage === "syncing") {
-        setTranscriptionProgress(
+        updateProgress(
           `${clip.filename}: finishing transcript save (${position + 1}/${chunks.length})`,
+          chunkProgress(0.8),
         );
         payload = await transcriptChunkPayload(
           project.id,
@@ -103,16 +126,18 @@ export function useTranscriptionWorkflow(
           chunk.chunkIndex,
         );
       } else {
-        setTranscriptionProgress(
+        updateProgress(
           `${clip.filename}: extracting audio (${position + 1}/${chunks.length})`,
+          chunkProgress(0.1),
         );
         chunk = await extractTranscriptionChunk(
           project.id,
           clip.id,
           chunk.chunkIndex,
         );
-        setTranscriptionProgress(
+        updateProgress(
           `${clip.filename}: transcribing locally with Apple Speech (${position + 1}/${chunks.length}). The first run may download Apple's language model.`,
+          chunkProgress(0.35),
         );
         payload = await transcribeAudioChunk(
           project.id,
@@ -122,8 +147,9 @@ export function useTranscriptionWorkflow(
         );
       }
 
-      setTranscriptionProgress(
+      updateProgress(
         `${clip.filename}: saving the transcript (${position + 1}/${chunks.length})`,
+        chunkProgress(0.8),
       );
       await syncTranscriptChunk(payload);
       await completeTranscriptionChunk(
@@ -132,11 +158,16 @@ export function useTranscriptionWorkflow(
         chunk.chunkIndex,
       );
       chunks = await listTranscriptionChunks(project.id, clip.id);
+      updateProgress(
+        `${clip.filename}: ${position + 1} of ${chunks.length} chunks complete`,
+        chunkProgress(1),
+      );
     }
 
     const utterances = await listTranscriptUtterances(project.id, clip.id);
     setUtterancesByClip((current) => ({ ...current, [clip.id]: utterances }));
     await refreshTranscriptSummaries();
+    updateProgress(`${clip.filename}: transcript complete`, 1);
   }
 
   async function startClipTranscription(clip: ClipManifest) {
@@ -162,9 +193,14 @@ export function useTranscriptionWorkflow(
     setTranscriptionDialogOpen(false);
     setNotice(null);
     try {
-      for (const clip of remainingTranscribableClips) {
+      for (let index = 0; index < remainingTranscribableClips.length; index += 1) {
+        const clip = remainingTranscribableClips[index];
         setTranscribingClipId(clip.id);
-        await processClipTranscription(clip);
+        await processClipTranscription(
+          clip,
+          index,
+          remainingTranscribableClips.length,
+        );
       }
       setNotice({
         tone: "success",

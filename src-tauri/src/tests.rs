@@ -17,6 +17,7 @@ use crate::visual::estimate_visual_cost;
 fn supported_extensions_are_case_insensitive() {
     assert!(is_supported_video(Path::new("A001.MOV")));
     assert!(is_supported_video(Path::new("interview.mp4")));
+    assert!(!is_supported_video(Path::new("._interview.mp4")));
     assert!(!is_supported_video(Path::new("notes.txt")));
 }
 

@@ -421,6 +421,13 @@ pub(crate) fn sampled_fingerprint(path: &Path) -> Result<String, String> {
 }
 
 pub(crate) fn is_supported_video(path: &Path) -> bool {
+    if path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .is_some_and(|name| name.starts_with("._"))
+    {
+        return false;
+    }
     matches!(
         path.extension()
             .and_then(|value| value.to_str())

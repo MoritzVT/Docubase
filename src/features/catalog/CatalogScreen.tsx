@@ -148,6 +148,7 @@ export function CatalogScreen({
     saveClipVisualMetadata,
     remainingVisualClips,
     remainingVisualImageClips,
+    skippedVisualImageClipCount,
     analysisProgress,
     recordedVisualCost,
   } = useVisualWorkflow(project, clips, transcriptSummaries, setNotice);
@@ -360,6 +361,11 @@ export function CatalogScreen({
           >
             <Images size={16} />
             2. Generate clip images
+            {skippedVisualImageClipCount > 0 && (
+              <span className="button-count">
+                {skippedVisualImageClipCount} skipped
+              </span>
+            )}
           </button>
           <button
             className="secondary-button compact"
@@ -432,7 +438,9 @@ export function CatalogScreen({
             </span>
           </div>
           <strong>
-            {progress.completed} / {progress.total}
+            {progress.completed} / {progress.total} · {progress.total > 0
+              ? Math.round(progress.completed / progress.total * 100)
+              : 0}%
           </strong>
           <progress max={Math.max(progress.total, 1)} value={progress.completed} />
         </div>
@@ -441,24 +449,39 @@ export function CatalogScreen({
         <div className="progress-panel transcription">
           <div>
             <AudioLines className="pulse" size={17} />
-            <span>{transcriptionProgress}</span>
+            <span>{transcriptionProgress.message}</span>
           </div>
-          <strong>Keep Docubase open</strong>
-          <progress />
+          <strong>
+            {Math.round(
+              transcriptionProgress.completed /
+              Math.max(transcriptionProgress.total, 1) * 100,
+            )}%
+          </strong>
+          <progress
+            aria-label="Transcription progress"
+            max={Math.max(transcriptionProgress.total, 1)}
+            value={transcriptionProgress.completed}
+          />
         </div>
       )}
       {visualProgress && (
         <div className="progress-panel visual">
           <div>
             <Images className="pulse" size={17} />
-            <span>{visualProgress}</span>
+            <span>{visualProgress.message}</span>
           </div>
           <strong>
-            {visualProgress.includes("sampling")
-              ? "Source stays local"
-              : "Cheap-first processing"}
+            {Math.round(
+              visualProgress.completed / Math.max(visualProgress.total, 1) * 100,
+            )}%
           </strong>
-          <progress />
+          <progress
+            aria-label={visualProgress.kind === "images"
+              ? "Clip image generation progress"
+              : "AI analysis submission progress"}
+            max={Math.max(visualProgress.total, 1)}
+            value={visualProgress.completed}
+          />
         </div>
       )}
       {analysisProgress && (

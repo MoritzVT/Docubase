@@ -426,6 +426,12 @@ textarea::placeholder {
   padding: 0 14px;
 }
 
+.button-count {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+}
+
 .text-button {
   border: 0;
   color: var(--accent-text);

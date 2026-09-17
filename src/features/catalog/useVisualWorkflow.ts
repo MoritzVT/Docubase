@@ -36,6 +36,13 @@ import {
 } from "../../lib/visual";
 import type { CatalogNotice } from "./types";
 
+type VisualProgress = {
+  message: string;
+  completed: number;
+  total: number;
+  kind: "images" | "analysis";
+};
+
 function visualJobNeedsRefresh(job: VisualAnalysisJob): boolean {
   return ["pending", "running"].includes(job.state) ||
     (job.kind === "clip" &&
@@ -86,7 +93,7 @@ export function useVisualWorkflow(
   const [visualWorkingClipId, setVisualWorkingClipId] = useState<string | null>(
     null,
   );
-  const [visualProgress, setVisualProgress] = useState<string | null>(null);
+  const [visualProgress, setVisualProgress] = useState<VisualProgress | null>(null);
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("batch");
   const [visualPreflight, setVisualPreflight] = useState<{
     clips: ClipManifest[];
@@ -151,30 +158,45 @@ export function useVisualWorkflow(
 
   async function extractVisuals(clipsToExtract: ClipManifest[]) {
     const prepared: Array<{ clip: ClipManifest; frames: VisualFrame[] }> = [];
+    const skipped: Array<{ clip: ClipManifest; error: string }> = [];
     for (let index = 0; index < clipsToExtract.length; index += 1) {
       const clip = clipsToExtract[index];
       setVisualWorkingClipId(clip.id);
-      setVisualProgress(
-        `${clip.filename}: sampling locally at one frame per second (${index + 1}/${clipsToExtract.length})`,
-      );
-      const frames = await extractVisualIndex(project.id, clip.id);
-      setVisualFramesByClip((current) => ({ ...current, [clip.id]: frames }));
-      prepared.push({ clip, frames });
+      setVisualProgress({
+        message: `${clip.filename}: sampling locally at one frame per second (${index + 1}/${clipsToExtract.length}, ${skipped.length} skipped)`,
+        completed: index,
+        total: clipsToExtract.length,
+        kind: "images",
+      });
+      try {
+        const frames = await extractVisualIndex(project.id, clip.id);
+        setVisualFramesByClip((current) => ({ ...current, [clip.id]: frames }));
+        prepared.push({ clip, frames });
+      } catch (error) {
+        skipped.push({ clip, error: readableError(error) });
+      }
+      setVisualProgress({
+        message: `${index + 1} of ${clipsToExtract.length} clips checked (${skipped.length} skipped)`,
+        completed: index + 1,
+        total: clipsToExtract.length,
+        kind: "images",
+      });
     }
     await refreshVisualState();
-    return prepared;
+    return { prepared, skipped };
   }
 
   async function prepareVisualImages(clipsToExtract: ClipManifest[]) {
     setNotice(null);
     try {
-      await extractVisuals(clipsToExtract);
+      const { prepared, skipped } = await extractVisuals(clipsToExtract);
       setNotice({
-        tone: "success",
-        message:
-          `${clipsToExtract.length} clip${clipsToExtract.length === 1 ? "" : "s"} now ${
-            clipsToExtract.length === 1 ? "has" : "have"
-          } local visual images. No images were uploaded and no AI cost was incurred.`,
+        tone: skipped.length > 0 ? "warning" : "success",
+        message: `${prepared.length} clip${prepared.length === 1 ? "" : "s"} generated. ${
+          skipped.length > 0
+            ? `${skipped.length} unreadable or unsupported file${skipped.length === 1 ? " was" : "s were"} skipped; processing continued.`
+            : "No files were skipped."
+        } No images were uploaded and no AI cost was incurred.`,
       });
     } catch (error) {
       setNotice({ tone: "error", message: readableError(error) });
@@ -202,13 +224,31 @@ export function useVisualWorkflow(
       return;
     }
     try {
+      const preparationTotal = Math.max(clipsToPrepare.length * 2, 1);
+      let preparationCompleted = 0;
+      setVisualProgress({
+        message: "Preparing clip images for analysis…",
+        completed: 0,
+        total: preparationTotal,
+        kind: "analysis",
+      });
       const prepared = await Promise.all(
-        clipsToPrepare.map(async (clip) => ({
-          clip,
-          frames:
+        clipsToPrepare.map(async (clip) => {
+          const item = {
+            clip,
+            frames:
             visualFramesByClip[clip.id] ??
             await listVisualFrames(project.id, clip.id),
-        })),
+          };
+          preparationCompleted += 1;
+          setVisualProgress({
+            message: `Preparing images: ${preparationCompleted} of ${clipsToPrepare.length} clips`,
+            completed: preparationCompleted,
+            total: preparationTotal,
+            kind: "analysis",
+          });
+          return item;
+        }),
       );
       const clipsMissingImages = prepared.filter(
         ({ frames }) => frames.length === 0,
@@ -225,10 +265,17 @@ export function useVisualWorkflow(
       }
       const transcriptForEstimate = new Map(
         await Promise.all(
-          prepared.map(async ({ clip }) => [
-            clip.id,
-            await listTranscriptUtterances(project.id, clip.id),
-          ] as const),
+          prepared.map(async ({ clip }) => {
+            const utterances = await listTranscriptUtterances(project.id, clip.id);
+            preparationCompleted += 1;
+            setVisualProgress({
+              message: `Preparing transcripts: ${preparationCompleted - clipsToPrepare.length} of ${clipsToPrepare.length} clips`,
+              completed: preparationCompleted,
+              total: preparationTotal,
+              kind: "analysis",
+            });
+            return [clip.id, utterances] as const;
+          }),
         ),
       );
       const momentIds = new Set(
@@ -340,7 +387,12 @@ export function useVisualWorkflow(
         await setVisualClipStage(project.id, clip.id, "uploading");
         const routingFrame = frames[Math.floor((frames.length - 1) / 2)];
         if (!routingFrame.storagePath) {
-          setVisualProgress(`${clip.filename}: uploading one routing frame`);
+          setVisualProgress({
+            message: `${clip.filename}: uploading one routing frame`,
+            completed: clipIndex,
+            total: preflight.clips.length,
+            kind: "analysis",
+          });
           const bytes = await readVisualFrame(
             project.id,
             clip.id,
@@ -356,11 +408,14 @@ export function useVisualWorkflow(
         }
         frames = await listVisualFrames(project.id, clip.id);
         setVisualFramesByClip((current) => ({ ...current, [clip.id]: frames }));
-        setVisualProgress(
-          `${clip.filename}: submitting ${
+        setVisualProgress({
+          message: `${clip.filename}: submitting ${
             analysisMode === "fast" ? "Gemini Fast" : "low-cost Gemini Batch"
           } analysis (${clipIndex + 1}/${preflight.clips.length})`,
-        );
+          completed: clipIndex + 0.35,
+          total: preflight.clips.length,
+          kind: "analysis",
+        });
         const submission = await submitVisualAnalysis({
           projectId: project.id,
           clipId: clip.id,
@@ -389,8 +444,18 @@ export function useVisualWorkflow(
           estimatedCostUsd: submission.estimatedCostUsd,
         });
         if (analysisMode === "fast") {
-          await collectVisualJob(submission.jobId, clip.id);
+          await collectVisualJob(submission.jobId, clip.id, {
+            completed: clipIndex + 0.35,
+            total: preflight.clips.length,
+            label: clip.filename,
+          });
         }
+        setVisualProgress({
+          message: `${clip.filename}: analysis submitted`,
+          completed: clipIndex + 1,
+          total: preflight.clips.length,
+          kind: "analysis",
+        });
       }
       const refreshed = await refreshVisualState();
       if (!refreshed) {
@@ -450,7 +515,11 @@ export function useVisualWorkflow(
     }
   }
 
-  async function collectVisualJob(jobId: string, clipId: string) {
+  async function collectVisualJob(
+    jobId: string,
+    clipId: string,
+    progress?: { completed: number; total: number; label: string },
+  ) {
     let result = await refreshVisualAnalysis({
       projectId: project.id,
       jobId,
@@ -460,9 +529,14 @@ export function useVisualWorkflow(
       const missingFrames = frames.filter((frame) => !frame.storagePath);
       for (let index = 0; index < missingFrames.length; index += 1) {
         const frame = missingFrames[index];
-        setVisualProgress(
-          `${clipId}: uploading visual frame ${index + 1}/${missingFrames.length}`,
-        );
+        setVisualProgress({
+          message: `${progress?.label ?? clipId}: uploading visual frame ${index + 1}/${missingFrames.length}`,
+          completed: progress
+            ? progress.completed + (index / Math.max(missingFrames.length, 1)) * 0.6
+            : index,
+          total: progress?.total ?? missingFrames.length,
+          kind: "analysis",
+        });
         const bytes = await readVisualFrame(project.id, clipId, frame.id);
         const document = await uploadRetainedFrame(frame, bytes);
         await markVisualFrameUploaded(
@@ -497,7 +571,6 @@ export function useVisualWorkflow(
   async function refreshPendingVisualAnalysis(silent = false) {
     if (!silent) {
       setNotice(null);
-      setVisualProgress("Checking AI analysis jobs…");
     }
     const errors: string[] = [];
     let completedCount = 0;
@@ -507,11 +580,24 @@ export function useVisualWorkflow(
       const pendingJobs = visualJobs.filter((job) =>
         visualJobNeedsRefresh(job),
       );
-      for (const job of pendingJobs) {
+      if (!silent) {
+        setVisualProgress({
+          message: "Checking AI analysis jobs…",
+          completed: 0,
+          total: Math.max(pendingJobs.length, 1),
+          kind: "analysis",
+        });
+      }
+      for (let index = 0; index < pendingJobs.length; index += 1) {
+        const job = pendingJobs[index];
         if (job.clipId) {
           try {
             setVisualWorkingClipId(job.clipId);
-            const result = await collectVisualJob(job.id, job.clipId);
+            const result = await collectVisualJob(job.id, job.clipId, {
+              completed: index,
+              total: pendingJobs.length,
+              label: job.clipId,
+            });
             if (result.completed) {
               completedCount += 1;
             } else if (result.state === "partial" || result.state === "failed") {
@@ -527,6 +613,14 @@ export function useVisualWorkflow(
               error: message,
             }).catch(() => undefined);
           }
+        }
+        if (!silent) {
+          setVisualProgress({
+            message: `${index + 1} of ${pendingJobs.length} AI jobs checked`,
+            completed: index + 1,
+            total: pendingJobs.length,
+            kind: "analysis",
+          });
         }
       }
       await refreshVisualState();
@@ -610,8 +704,15 @@ export function useVisualWorkflow(
   const remainingVisualImageClips = clips.filter(
     (clip) =>
       (visualSummaries[clip.id]?.totalFrames ?? 0) === 0 &&
+      clip.stage !== "failed" &&
+      visualSummaries[clip.id]?.stage !== "failed" &&
       !activeVisualClipIds.has(clip.id),
   );
+  const skippedVisualImageClipCount = clips.filter(
+    (clip) =>
+      (visualSummaries[clip.id]?.totalFrames ?? 0) === 0 &&
+      (clip.stage === "failed" || visualSummaries[clip.id]?.stage === "failed"),
+  ).length;
   const remainingVisualClips = clips.filter(
     (clip) =>
       (!clip.hasAudio ||
@@ -697,6 +798,7 @@ export function useVisualWorkflow(
     saveClipVisualMetadata,
     remainingVisualClips,
     remainingVisualImageClips,
+    skippedVisualImageClipCount,
     pendingVisualJobCount,
     analysisProgress,
     recordedVisualCost,
