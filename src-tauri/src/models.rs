@@ -190,6 +190,40 @@ pub(crate) struct ClipVisualSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct VisualAnalysisQueueItem {
+    pub(crate) run_id: String,
+    pub(crate) project_id: String,
+    pub(crate) clip_id: String,
+    pub(crate) position: i64,
+    pub(crate) state: String,
+    pub(crate) attempt_count: i64,
+    pub(crate) job_id: Option<String>,
+    pub(crate) error: Option<String>,
+    pub(crate) updated_at: String,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct VisualAnalysisRun {
+    pub(crate) id: String,
+    pub(crate) project_id: String,
+    pub(crate) analysis_mode: String,
+    pub(crate) state: String,
+    pub(crate) estimated_cost_usd: f64,
+    pub(crate) total_count: i64,
+    pub(crate) queued_count: i64,
+    pub(crate) retrying_count: i64,
+    pub(crate) submitted_count: i64,
+    pub(crate) completed_count: i64,
+    pub(crate) failed_count: i64,
+    pub(crate) skipped_count: i64,
+    pub(crate) created_at: String,
+    pub(crate) updated_at: String,
+    pub(crate) items: Vec<VisualAnalysisQueueItem>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct TranscriptionChunk {
     pub(crate) id: String,
     pub(crate) project_id: String,

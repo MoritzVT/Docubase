@@ -140,6 +140,7 @@ export function CatalogScreen({
     setVisualPreflight,
     analysisMode,
     setAnalysisMode,
+    analysisRun,
     toggleVisual,
     prepareVisualImages,
     prepareVisualAnalysis,
@@ -373,13 +374,16 @@ export function CatalogScreen({
               working ||
               Boolean(transcribingClipId) ||
               Boolean(visualWorkingClipId) ||
+              analysisRun?.state === "active" ||
               !isTauri ||
               remainingVisualClips.length === 0
             }
             onClick={() => void prepareVisualAnalysis(remainingVisualClips)}
           >
             <Images size={16} />
-            3. Analyze clips
+            {analysisRun?.state === "complete_with_errors"
+              ? "Retry failed clips"
+              : "3. Analyze clips"}
           </button>
           <button
             className="secondary-button compact"
@@ -484,7 +488,31 @@ export function CatalogScreen({
           />
         </div>
       )}
-      {analysisProgress && (
+      {analysisRun?.state === "active" && (
+        <div className="progress-panel analysis-progress">
+          <div>
+            <Images className="pulse" size={17} />
+            <span>Analyzing the complete project queue</span>
+          </div>
+          <strong>
+            {analysisRun.completedCount + analysisRun.failedCount + analysisRun.skippedCount}
+            {" "}of {analysisRun.totalCount} finished
+          </strong>
+          <progress
+            aria-label="Complete project analysis progress"
+            max={Math.max(analysisRun.totalCount, 1)}
+            value={
+              analysisRun.completedCount +
+              analysisRun.failedCount +
+              analysisRun.skippedCount
+            }
+          />
+          <small>
+            {analysisRun.completedCount} complete · {analysisRun.submittedCount} processing · {analysisRun.queuedCount} queued · {analysisRun.retryingCount} retrying · {analysisRun.failedCount} failed · {analysisRun.skippedCount} skipped. Estimated full-run ceiling: {formatUsd(analysisRun.estimatedCostUsd)}.
+          </small>
+        </div>
+      )}
+      {analysisProgress && analysisRun?.state !== "active" && (
         <div className="progress-panel analysis-progress">
           <div>
             <Images className="pulse" size={17} />

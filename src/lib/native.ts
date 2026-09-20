@@ -12,6 +12,7 @@ import type {
   TranscriptUtterance,
   TranscriptionChunk,
   VisualFrame,
+  VisualAnalysisRun,
   VisualStage,
 } from "./contracts";
 
@@ -292,4 +293,46 @@ export async function setVisualClipStage(
     estimatedCostUsd: options?.estimatedCostUsd ?? null,
     error: options?.error ?? null,
   });
+}
+
+export async function createVisualAnalysisRun(input: {
+  runId: string;
+  projectId: string;
+  clipIds: string[];
+  analysisMode: "batch" | "fast";
+  estimatedCostUsd: number;
+}): Promise<VisualAnalysisRun> {
+  if (!isTauri) throw new Error("Bulk analysis requires the desktop app.");
+  return invoke("create_visual_analysis_run", input);
+}
+
+export async function getActiveVisualAnalysisRun(
+  projectId: string,
+): Promise<VisualAnalysisRun | null> {
+  if (!isTauri) return null;
+  return invoke("get_active_visual_analysis_run", { projectId });
+}
+
+export async function updateVisualAnalysisQueueItem(input: {
+  runId: string;
+  clipId: string;
+  itemState: VisualAnalysisRun["items"][number]["state"];
+  jobId?: string | null;
+  error?: string | null;
+  incrementAttempt?: boolean;
+}): Promise<VisualAnalysisRun> {
+  if (!isTauri) throw new Error("Bulk analysis requires the desktop app.");
+  return invoke("update_visual_analysis_queue_item", {
+    ...input,
+    jobId: input.jobId ?? null,
+    error: input.error ?? null,
+    incrementAttempt: input.incrementAttempt ?? false,
+  });
+}
+
+export async function finishVisualAnalysisRun(
+  runId: string,
+): Promise<VisualAnalysisRun> {
+  if (!isTauri) throw new Error("Bulk analysis requires the desktop app.");
+  return invoke("finish_visual_analysis_run", { runId });
 }

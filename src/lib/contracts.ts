@@ -85,6 +85,47 @@ export type ClipManifest = z.infer<typeof ClipManifestSchema>;
 export const AnalysisModeSchema = z.enum(["batch", "fast"]);
 export type AnalysisMode = z.infer<typeof AnalysisModeSchema>;
 
+export const VisualAnalysisQueueItemSchema = z.object({
+  runId: z.string().min(1),
+  projectId: z.string().min(1),
+  clipId: z.string().min(1),
+  position: z.number().int().nonnegative(),
+  state: z.enum([
+    "queued",
+    "retrying",
+    "submitted",
+    "complete",
+    "failed",
+    "skipped",
+  ]),
+  attemptCount: z.number().int().nonnegative(),
+  jobId: z.string().nullable(),
+  error: z.string().nullable(),
+  updatedAt: z.string().datetime(),
+});
+export type VisualAnalysisQueueItem = z.infer<
+  typeof VisualAnalysisQueueItemSchema
+>;
+
+export const VisualAnalysisRunSchema = z.object({
+  id: z.string().min(1),
+  projectId: z.string().min(1),
+  analysisMode: AnalysisModeSchema,
+  state: z.enum(["active", "complete", "complete_with_errors"]),
+  estimatedCostUsd: z.number().nonnegative(),
+  totalCount: z.number().int().nonnegative(),
+  queuedCount: z.number().int().nonnegative(),
+  retryingCount: z.number().int().nonnegative(),
+  submittedCount: z.number().int().nonnegative(),
+  completedCount: z.number().int().nonnegative(),
+  failedCount: z.number().int().nonnegative(),
+  skippedCount: z.number().int().nonnegative(),
+  createdAt: z.string().datetime(),
+  updatedAt: z.string().datetime(),
+  items: z.array(VisualAnalysisQueueItemSchema),
+});
+export type VisualAnalysisRun = z.infer<typeof VisualAnalysisRunSchema>;
+
 export const IngestEstimateSchema = z.object({
   projectId: z.string().min(1),
   clipCount: z.number().int().nonnegative(),

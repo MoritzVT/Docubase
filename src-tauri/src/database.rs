@@ -161,6 +161,36 @@ pub(crate) fn initialize_database(path: &Path) -> Result<(), String> {
 
             CREATE INDEX IF NOT EXISTS visual_frames_clip_moment
             ON visual_frames(project_id, clip_id, moment_id);
+
+            CREATE TABLE IF NOT EXISTS visual_analysis_runs (
+                id TEXT PRIMARY KEY,
+                project_id TEXT NOT NULL,
+                analysis_mode TEXT NOT NULL,
+                state TEXT NOT NULL,
+                estimated_cost_usd REAL NOT NULL DEFAULT 0,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
+            );
+
+            CREATE TABLE IF NOT EXISTS visual_analysis_queue (
+                run_id TEXT NOT NULL,
+                project_id TEXT NOT NULL,
+                clip_id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                state TEXT NOT NULL,
+                attempt_count INTEGER NOT NULL DEFAULT 0,
+                job_id TEXT,
+                error TEXT,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (run_id, clip_id),
+                FOREIGN KEY (run_id) REFERENCES visual_analysis_runs(id) ON DELETE CASCADE,
+                FOREIGN KEY (project_id, clip_id)
+                    REFERENCES clips(project_id, id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS visual_analysis_queue_run_position
+            ON visual_analysis_queue(run_id, position);
             ",
         )
         .map_err(string_error)?;

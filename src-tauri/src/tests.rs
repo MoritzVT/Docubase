@@ -73,6 +73,8 @@ fn database_initialization_adds_transcription_tables() {
         "transcript_utterances",
         "visual_clip_jobs",
         "visual_frames",
+        "visual_analysis_runs",
+        "visual_analysis_queue",
     ] {
         let exists: i64 = connection
             .query_row(

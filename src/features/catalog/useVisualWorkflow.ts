@@ -1,4 +1,11 @@
-import { type Dispatch, type SetStateAction, useCallback, useEffect, useState } from "react";
+import {
+  type Dispatch,
+  type SetStateAction,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import {
   listCloudClipVisualMetadata,
   listCloudVisualMoments,
@@ -13,22 +20,28 @@ import type {
   ClipVisualMetadata,
   ClipVisualSummary,
   LocalProject,
+  VisualAnalysisRun,
   VisualAnalysisJob,
   VisualFrame,
   VisualMoment,
 } from "../../lib/contracts";
 import {
+  createVisualAnalysisRun,
   extractVisualIndex,
+  finishVisualAnalysisRun,
+  getActiveVisualAnalysisRun,
   listTranscriptUtterances,
   listVisualFrames,
   listVisualSummaries,
   markVisualFrameUploaded,
   readVisualFrame,
   setVisualClipStage,
+  updateVisualAnalysisQueueItem,
 } from "../../lib/native";
 import { readableError } from "../../lib/presentation";
 import {
   refreshVisualAnalysis,
+  estimateVisualAnalysisCost,
   submitVisualAnalysis,
   TRANSCRIPT_SECTION_MAX_CHARACTERS,
   uploadRetainedFrame,
@@ -42,6 +55,27 @@ type VisualProgress = {
   total: number;
   kind: "images" | "analysis";
 };
+
+const ANALYSIS_SUBMISSION_CONCURRENCY = 3;
+const ANALYSIS_MAX_SUBMISSION_ATTEMPTS = 5;
+const ANALYSIS_POLL_BATCH_SIZE = 25;
+
+function isTransientAnalysisError(message: string): boolean {
+  if (/no new paid request|project allows|invalid|permission|unauthorized/i.test(message)) {
+    return false;
+  }
+  return /\b429\b|\b500\b|\b502\b|\b503\b|\b504\b|unavailable|deadline|timeout|timed out|network|fetch|temporar|too many requests|quota/i.test(
+    message,
+  );
+}
+
+function retryDelayMs(attempt: number): number {
+  return Math.min(30_000, 1_500 * 2 ** Math.max(0, attempt - 1));
+}
+
+function wait(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
 
 function visualJobNeedsRefresh(job: VisualAnalysisJob): boolean {
   return ["pending", "running"].includes(job.state) ||
@@ -95,6 +129,9 @@ export function useVisualWorkflow(
   );
   const [visualProgress, setVisualProgress] = useState<VisualProgress | null>(null);
   const [analysisMode, setAnalysisMode] = useState<AnalysisMode>("batch");
+  const [analysisRun, setAnalysisRun] = useState<VisualAnalysisRun | null>(null);
+  const processingRunId = useRef<string | null>(null);
+  const pollCursor = useRef(0);
   const [visualPreflight, setVisualPreflight] = useState<{
     clips: ClipManifest[];
     frameCount: number;
@@ -129,6 +166,22 @@ export function useVisualWorkflow(
   useEffect(() => {
     void refreshVisualState();
   }, [refreshVisualState]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getActiveVisualAnalysisRun(project.id)
+      .then((run) => {
+        if (!cancelled) setAnalysisRun(run);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setNotice({ tone: "error", message: readableError(error) });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [project.id]);
 
   async function loadVisualDetail(clipId: string) {
     const [frames, moments] = await Promise.all([
@@ -209,6 +262,13 @@ export function useVisualWorkflow(
 
   async function prepareVisualAnalysis(clipsToPrepare: ClipManifest[]) {
     setNotice(null);
+    if (analysisRun?.state === "active") {
+      setNotice({
+        tone: "warning",
+        message: "The current project-wide analysis run is still active.",
+      });
+      return;
+    }
     const clipsMissingTranscripts = clipsToPrepare.filter(
       (clip) =>
         clip.hasAudio && transcriptSummaries[clip.id]?.stage !== "complete",
@@ -368,36 +428,86 @@ export function useVisualWorkflow(
     if (!preflight) return;
     setVisualPreflight(null);
     setNotice(null);
-    let activeClipId: string | null = null;
-    const submittedJobIds: string[] = [];
     try {
-      const latestSummaries = Object.fromEntries(
-        (await listVisualSummaries(project.id)).map((summary) => [
-          summary.clipId,
-          summary,
-        ]),
+      const estimatedCostUsd = estimateVisualAnalysisCost(
+        preflight.frameCount,
+        preflight.momentCount,
+        preflight.estimatedInputTextTokens,
+        preflight.transcriptRequestCount,
+        preflight.summaryFrameCount,
+        preflight.summaryInputTextTokens,
+        analysisMode,
       );
-      for (let clipIndex = 0; clipIndex < preflight.clips.length; clipIndex += 1) {
-        const clip = preflight.clips[clipIndex];
-        activeClipId = clip.id;
-        setVisualWorkingClipId(clip.id);
+      const run = await createVisualAnalysisRun({
+        runId: crypto.randomUUID(),
+        projectId: project.id,
+        clipIds: preflight.clips.map((clip) => clip.id),
+        analysisMode,
+        estimatedCostUsd,
+      });
+      pollCursor.current = 0;
+      setAnalysisRun(run);
+      setNotice({
+        tone: "warning",
+        message: `${run.totalCount} clips queued for analysis. Docubase will continue past individual errors and resume this run if reopened.`,
+      });
+    } catch (error) {
+      setNotice({ tone: "error", message: readableError(error) });
+    }
+  }
+
+  async function submitAnalysisQueueItem(
+    run: VisualAnalysisRun,
+    initialItem: VisualAnalysisRun["items"][number],
+    clip: ClipManifest | undefined,
+    summaries: Record<string, ClipVisualSummary>,
+  ) {
+    if (!clip) {
+      const updated = await updateVisualAnalysisQueueItem({
+        runId: run.id,
+        clipId: initialItem.clipId,
+        itemState: "skipped",
+        error: "Clip is no longer in the local catalog.",
+      });
+      setAnalysisRun(updated);
+      return;
+    }
+    let item = initialItem;
+    while (item.attemptCount < ANALYSIS_MAX_SUBMISSION_ATTEMPTS) {
+      const attempting = await updateVisualAnalysisQueueItem({
+        runId: run.id,
+        clipId: clip.id,
+        itemState: "retrying",
+        error: null,
+        incrementAttempt: true,
+      });
+      setAnalysisRun(attempting);
+      item = attempting.items.find((candidate) => candidate.clipId === clip.id) ?? item;
+      setVisualWorkingClipId(clip.id);
+      setVisualProgress({
+        message: `${clip.filename}: submitting analysis (attempt ${item.attemptCount}/${ANALYSIS_MAX_SUBMISSION_ATTEMPTS})`,
+        completed: attempting.completedCount + attempting.failedCount + attempting.skippedCount,
+        total: attempting.totalCount,
+        kind: "analysis",
+      });
+      try {
         let frames =
           visualFramesByClip[clip.id] ??
           (await listVisualFrames(project.id, clip.id));
+        if (frames.length === 0) {
+          const updated = await updateVisualAnalysisQueueItem({
+            runId: run.id,
+            clipId: clip.id,
+            itemState: "skipped",
+            error: "No local clip images are available.",
+          });
+          setAnalysisRun(updated);
+          return;
+        }
         await setVisualClipStage(project.id, clip.id, "uploading");
         const routingFrame = frames[Math.floor((frames.length - 1) / 2)];
         if (!routingFrame.storagePath) {
-          setVisualProgress({
-            message: `${clip.filename}: uploading one routing frame`,
-            completed: clipIndex,
-            total: preflight.clips.length,
-            kind: "analysis",
-          });
-          const bytes = await readVisualFrame(
-            project.id,
-            clip.id,
-            routingFrame.id,
-          );
+          const bytes = await readVisualFrame(project.id, clip.id, routingFrame.id);
           const document = await uploadRetainedFrame(routingFrame, bytes);
           await markVisualFrameUploaded(
             project.id,
@@ -408,18 +518,10 @@ export function useVisualWorkflow(
         }
         frames = await listVisualFrames(project.id, clip.id);
         setVisualFramesByClip((current) => ({ ...current, [clip.id]: frames }));
-        setVisualProgress({
-          message: `${clip.filename}: submitting ${
-            analysisMode === "fast" ? "Gemini Fast" : "low-cost Gemini Batch"
-          } analysis (${clipIndex + 1}/${preflight.clips.length})`,
-          completed: clipIndex + 0.35,
-          total: preflight.clips.length,
-          kind: "analysis",
-        });
         const submission = await submitVisualAnalysis({
           projectId: project.id,
           clipId: clip.id,
-          analysisMode,
+          analysisMode: run.analysisMode,
           frames: frames.map((frame) => ({
             id: frame.id,
             momentId: frame.momentId,
@@ -428,90 +530,157 @@ export function useVisualWorkflow(
             changeScore: frame.changeScore,
           })),
           stability: {
-            significantChangeCount:
-              latestSummaries[clip.id]?.significantChangeCount ?? 0,
-            significantChangeRatio:
-              latestSummaries[clip.id]?.significantChangeRatio ?? 1,
-            medianChangeScore:
-              latestSummaries[clip.id]?.medianChangeScore ?? 1,
-            maximumChangeScore:
-              latestSummaries[clip.id]?.maximumChangeScore ?? 1,
+            significantChangeCount: summaries[clip.id]?.significantChangeCount ?? 0,
+            significantChangeRatio: summaries[clip.id]?.significantChangeRatio ?? 1,
+            medianChangeScore: summaries[clip.id]?.medianChangeScore ?? 1,
+            maximumChangeScore: summaries[clip.id]?.maximumChangeScore ?? 1,
           },
         });
-        submittedJobIds.push(submission.jobId);
         await setVisualClipStage(project.id, clip.id, "batched", {
           batchJobId: submission.jobId,
           estimatedCostUsd: submission.estimatedCostUsd,
         });
-        if (analysisMode === "fast") {
-          await collectVisualJob(submission.jobId, clip.id, {
-            completed: clipIndex + 0.35,
-            total: preflight.clips.length,
-            label: clip.filename,
-          });
+        let itemState: "submitted" | "complete" | "failed" = "submitted";
+        let itemError: string | null = null;
+        if (run.analysisMode === "fast") {
+          const result = await collectVisualJob(submission.jobId, clip.id);
+          if (result.completed) itemState = "complete";
+          else if (result.state === "partial" || result.state === "failed") {
+            itemState = "failed";
+            itemError = visualRetryMessage(result);
+          }
         }
-        setVisualProgress({
-          message: `${clip.filename}: analysis submitted`,
-          completed: clipIndex + 1,
-          total: preflight.clips.length,
-          kind: "analysis",
+        const updated = await updateVisualAnalysisQueueItem({
+          runId: run.id,
+          clipId: clip.id,
+          itemState,
+          jobId: submission.jobId,
+          error: itemError,
+        });
+        setAnalysisRun(updated);
+        return;
+      } catch (error) {
+        const message = readableError(error);
+        const canRetry =
+          item.attemptCount < ANALYSIS_MAX_SUBMISSION_ATTEMPTS &&
+          isTransientAnalysisError(message);
+        const updated = await updateVisualAnalysisQueueItem({
+          runId: run.id,
+          clipId: clip.id,
+          itemState: canRetry ? "retrying" : "failed",
+          error: message,
+        });
+        setAnalysisRun(updated);
+        if (!canRetry) {
+          await setVisualClipStage(project.id, clip.id, "failed", { error: message })
+            .catch(() => undefined);
+          return;
+        }
+        item = updated.items.find((candidate) => candidate.clipId === clip.id) ?? item;
+        await wait(retryDelayMs(item.attemptCount));
+      }
+    }
+  }
+
+  async function refreshSubmittedQueueItems(run: VisualAnalysisRun) {
+    const submitted = run.items.filter(
+      (item) => item.state === "submitted" && item.jobId,
+    );
+    if (submitted.length === 0) return false;
+    let changed = false;
+    const start = pollCursor.current % submitted.length;
+    const selected = Array.from(
+      { length: Math.min(ANALYSIS_POLL_BATCH_SIZE, submitted.length) },
+      (_, offset) => submitted[(start + offset) % submitted.length],
+    );
+    pollCursor.current = (start + selected.length) % submitted.length;
+    for (const item of selected) {
+      try {
+        const result = await collectVisualJob(item.jobId!, item.clipId);
+        if (result.completed || result.state === "partial" || result.state === "failed") {
+          const updated = await updateVisualAnalysisQueueItem({
+            runId: run.id,
+            clipId: item.clipId,
+            itemState: result.completed ? "complete" : "failed",
+            jobId: item.jobId,
+            error: result.completed ? null : visualRetryMessage(result),
+          });
+          setAnalysisRun(updated);
+          changed = true;
+        }
+      } catch (error) {
+        if (!isTransientAnalysisError(readableError(error))) {
+          const updated = await updateVisualAnalysisQueueItem({
+            runId: run.id,
+            clipId: item.clipId,
+            itemState: "failed",
+            jobId: item.jobId,
+            error: readableError(error),
+          });
+          setAnalysisRun(updated);
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
+
+  async function processVisualAnalysisRun(run: VisualAnalysisRun) {
+    if (processingRunId.current) return;
+    processingRunId.current = run.id;
+    try {
+      const current = await getActiveVisualAnalysisRun(project.id);
+      if (!current || current.id !== run.id) return;
+      setAnalysisRun(current);
+      const summaries = Object.fromEntries(
+        (await listVisualSummaries(project.id)).map((summary) => [
+          summary.clipId,
+          summary,
+        ]),
+      );
+      const clipsById = new Map(clips.map((clip) => [clip.id, clip]));
+      const waiting = current.items.filter(
+        (item) => item.state === "queued" || item.state === "retrying",
+      );
+      let nextIndex = 0;
+      const workers = Array.from(
+        { length: Math.min(ANALYSIS_SUBMISSION_CONCURRENCY, waiting.length) },
+        async () => {
+          while (nextIndex < waiting.length) {
+            const item = waiting[nextIndex];
+            nextIndex += 1;
+            await submitAnalysisQueueItem(
+              current,
+              item,
+              clipsById.get(item.clipId),
+              summaries,
+            );
+          }
+        },
+      );
+      await Promise.all(workers);
+      let latest = await getActiveVisualAnalysisRun(project.id);
+      if (!latest) return;
+      const queueChanged = await refreshSubmittedQueueItems(latest);
+      latest = await getActiveVisualAnalysisRun(project.id);
+      if (!latest) return;
+      const finished = await finishVisualAnalysisRun(latest.id);
+      setAnalysisRun(finished);
+      if (finished.state !== "active") {
+        setNotice({
+          tone: finished.failedCount > 0 ? "warning" : "success",
+          message: `AI analysis run finished: ${finished.completedCount} complete, ${finished.failedCount} failed, and ${finished.skippedCount} skipped.`,
         });
       }
-      const refreshed = await refreshVisualState();
-      if (!refreshed) {
-        throw new Error("Docubase could not read the submitted analysis jobs.");
-      }
-      const submittedJobs = submittedJobIds.map((jobId) =>
-        refreshed.jobs.find((job) => job.id === jobId),
-      );
-      const completedCount = submittedJobs.filter(
-        (job) => job?.state === "complete" || job?.phase === "complete",
-      ).length;
-      const failedCount = submittedJobs.filter(
-        (job) => job?.state === "partial" || job?.state === "failed",
-      ).length;
-      const remainingCount = Math.max(
-        0,
-        submittedJobIds.length - completedCount - failedCount,
-      );
-      if (failedCount > 0) {
-        setNotice({
-          tone: "error",
-          message: `AI analysis stopped: ${failedCount} clip${
-            failedCount === 1 ? "" : "s"
-          } failed, ${completedCount} finished, and ${remainingCount} remain in progress.`,
-        });
-      } else if (remainingCount > 0) {
-        setNotice({
-          tone: "warning",
-          message: `AI analysis is in progress: ${completedCount} of ${
-            submittedJobIds.length
-          } clip${submittedJobIds.length === 1 ? "" : "s"} finished; ${
-            remainingCount
-          } remaining.`,
-        });
-      } else {
-        setNotice({
-          tone: "success",
-          message: `AI analysis finished. Descriptions and tags are ready for ${
-            completedCount
-          } clip${completedCount === 1 ? "" : "s"}.`,
-        });
+      if (waiting.length > 0 || queueChanged || finished.state !== "active") {
+        await refreshVisualState();
       }
     } catch (error) {
-      if (activeClipId) {
-        await setVisualClipStage(
-          project.id,
-          activeClipId,
-          "failed",
-          { error: readableError(error) },
-        ).catch(() => undefined);
-      }
       setNotice({ tone: "error", message: readableError(error) });
     } finally {
+      processingRunId.current = null;
       setVisualWorkingClipId(null);
       setVisualProgress(null);
-      await refreshVisualState();
     }
   }
 
@@ -701,6 +870,13 @@ export function useVisualWorkflow(
       )
       .map((job) => job.clipId),
   );
+  const queuedAnalysisClipIds = new Set(
+    analysisRun?.state === "active"
+      ? analysisRun.items
+        .filter((item) => !["complete", "failed", "skipped"].includes(item.state))
+        .map((item) => item.clipId)
+      : [],
+  );
   const remainingVisualImageClips = clips.filter(
     (clip) =>
       (visualSummaries[clip.id]?.totalFrames ?? 0) === 0 &&
@@ -720,6 +896,7 @@ export function useVisualWorkflow(
       (visualSummaries[clip.id]?.totalFrames ?? 0) > 0 &&
       (visualMetadata[clip.id]?.visualStage !== "complete" ||
         visualMetadata[clip.id]?.analysisVersion !== "4") &&
+      !queuedAnalysisClipIds.has(clip.id) &&
       !activeVisualClipIds.has(clip.id),
   );
   const activeVisualJobs = visualJobs.filter(visualJobNeedsRefresh);
@@ -766,7 +943,11 @@ export function useVisualWorkflow(
   );
 
   useEffect(() => {
-    if (pendingVisualJobCount === 0 || visualWorkingClipId) return;
+    if (
+      analysisRun?.state === "active" ||
+      pendingVisualJobCount === 0 ||
+      visualWorkingClipId
+    ) return;
     const hasFastJob = activeVisualJobs.some(
       (job) => job.analysisMode === "fast",
     );
@@ -774,7 +955,21 @@ export function useVisualWorkflow(
       void refreshPendingVisualAnalysis(true);
     }, hasFastJob ? 5_000 : 45_000);
     return () => window.clearTimeout(timer);
-  }, [pendingVisualJobCount, visualJobs, visualWorkingClipId]);
+  }, [analysisRun?.state, pendingVisualJobCount, visualJobs, visualWorkingClipId]);
+
+  useEffect(() => {
+    if (analysisRun?.state !== "active" || clips.length === 0) return;
+    const hasWaiting = analysisRun.queuedCount + analysisRun.retryingCount > 0;
+    const delay = hasWaiting
+      ? 100
+      : analysisRun.analysisMode === "fast"
+        ? 5_000
+        : 30_000;
+    const timer = window.setTimeout(() => {
+      void processVisualAnalysisRun(analysisRun);
+    }, delay);
+    return () => window.clearTimeout(timer);
+  }, [analysisRun?.id, analysisRun?.state, analysisRun?.updatedAt, clips.length]);
 
   return {
     visualSummaries,
@@ -790,6 +985,7 @@ export function useVisualWorkflow(
     setVisualPreflight,
     analysisMode,
     setAnalysisMode,
+    analysisRun,
     toggleVisual,
     prepareVisualImages,
     prepareVisualAnalysis,

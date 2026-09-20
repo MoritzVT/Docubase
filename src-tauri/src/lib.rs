@@ -1,5 +1,6 @@
 use tauri::Manager;
 
+mod analysis_queue;
 mod catalog;
 mod database;
 mod media;
@@ -9,6 +10,10 @@ mod transcription;
 mod utilities;
 mod visual;
 
+use analysis_queue::{
+    create_visual_analysis_run, finish_visual_analysis_run, get_active_visual_analysis_run,
+    update_visual_analysis_queue_item,
+};
 use catalog::{list_local_clips, relink_folder, reveal_clip, scan_folder};
 use database::initialize_database;
 use models::AppState;
@@ -78,6 +83,10 @@ pub fn run() {
             read_visual_frame,
             mark_visual_frame_uploaded,
             set_visual_clip_stage,
+            create_visual_analysis_run,
+            get_active_visual_analysis_run,
+            update_visual_analysis_queue_item,
+            finish_visual_analysis_run,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Docubase");

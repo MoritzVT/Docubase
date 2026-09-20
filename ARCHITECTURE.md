@@ -47,6 +47,7 @@ Docubase uses four focused layers:
 - `transcription.rs` advances transcription work.
 - `transcription/repository.rs` persists transcript state.
 - `visual.rs` selects and stores local visual evidence.
+- `analysis_queue.rs` persists resumable project-wide analysis runs.
 - `media.rs` launches the bundled Swift sidecar.
 - `utilities.rs` contains small shared helpers.
 
@@ -101,10 +102,14 @@ speech frameworks while the rest of the application remains platform-neutral.
 
 1. Swift selects low-resolution frames locally.
 2. The editor reviews derivative size and estimated cost.
-3. The complete transcript and visual evidence are analyzed independently.
-4. Stable interviews stop after one image; other clips use visual moments.
-5. Cloud code validates evidence identifiers and merges the two sources.
-6. The frontend displays descriptions, tags, provenance, and progress.
+3. Rust saves every eligible clip in a durable project-wide queue.
+4. The frontend submits a bounded number concurrently and retries transient
+   failures without stopping sibling clips.
+5. The complete transcript and visual evidence are analyzed independently.
+6. Stable interviews stop after one image; other clips use visual moments.
+7. Cloud code validates evidence identifiers and merges the two sources.
+8. The frontend displays descriptions, tags, provenance, cost, and queue-wide
+   progress, resuming the run after an app restart when necessary.
 
 ### Semantic search
 

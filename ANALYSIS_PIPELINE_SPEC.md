@@ -82,6 +82,20 @@ by a later refresh.
 Both modes use the same schemas and validation. The app shows estimated cost,
 reserved cost, recorded cost, and measurable stage progress.
 
+## Project-wide runs
+
+One confirmation creates a durable SQLite queue containing every currently
+eligible clip and the full-run cost estimate. Docubase submits up to three
+clips concurrently, retries transient network, quota, timeout, and 5xx errors
+with exponential backoff, and continues when an individual clip fails.
+
+Queued, retrying, submitted, complete, failed, and skipped states are persisted
+per clip. Reopening the project resumes unfinished submissions and result
+collection. Cloud results are refreshed in bounded groups so very large
+projects do not create an unbounded polling burst. The run finishes only when
+every queued clip reaches a terminal state; failed clips can then be retried in
+a new idempotent run.
+
 ## Reliability
 
 - Every job has a versioned evidence fingerprint.
@@ -90,6 +104,8 @@ reserved cost, recorded cost, and measurable stage progress.
 - Failed siblings do not discard successful batch results.
 - Every returned evidence identifier is checked against supplied input.
 - Existing paid work is collected rather than silently resubmitted.
+- Temporary submission failures do not stop sibling clips.
+- Run progress and cost estimates cover the entire queued project selection.
 - Budget reservations are reconciled against observed token usage.
 
 ## Out of scope

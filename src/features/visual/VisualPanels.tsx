@@ -497,12 +497,14 @@ export function VisualAnalysisDialog({
             <strong>{formatUsd(estimatedCostUsd)}</strong>
           </div>
           <p>
-            The estimate reserves for up to {frameCount.toLocaleString()} retained
+            This estimate covers the complete {clipCount.toLocaleString()}-clip run,
+            including up to {frameCount.toLocaleString()} retained
             JPEGs ({formatBytes(retainedBytes)}) and {momentCount.toLocaleString()} visual
             moments. The transcript and images are analyzed as separate evidence
             sources, then merged. Each clip first uses one image to identify a
             stable interview; interviews stop there instead of uploading or
-            analyzing additional images.
+            analyzing additional images. Temporary retries reuse the same job IDs
+            and do not intentionally create duplicate billable work.
           </p>
         </div>
         <div className="provider-settings">
