@@ -33,6 +33,13 @@ import {
 } from "./shared.js";
 
 const RECORDS_PER_BATCH = 500;
+// Gemini Tier 1 currently allows 500,000 embedding tokens to be enqueued.
+// Stay below that ceiling so large projects can drain through a rolling window.
+const BATCH_ENQUEUED_TOKEN_WINDOW = 400_000;
+const QUOTA_RETRY_DELAY_MS = 60_000;
+const QUEUED_BATCH_STATE = "DOCUBASE_QUEUED";
+const SUBMITTING_BATCH_STATE = "DOCUBASE_SUBMITTING";
+const IMPORTED_BATCH_STATE = "DOCUBASE_IMPORTED";
 const MAX_RESULTS = 30;
 const VECTOR_CANDIDATE_LIMIT = 80;
 const BATCH_EMBEDDING_USD_PER_MILLION_TOKENS = 0.10;
@@ -204,7 +211,6 @@ export const startSearchIndex = onCall(
     }
     await writer.close();
 
-    const submittedBatchNames: string[] = [];
     const ai = requireGeminiClient();
     try {
       if (mode === "fast") {
@@ -285,41 +291,37 @@ export const startSearchIndex = onCall(
         ]);
         return complete;
       }
+      const batchWriter = database.bulkWriter();
       for (const [index, group] of groups.entries()) {
-        const batch = await ai.batches.createEmbeddings({
-          model: SEARCH_EMBEDDING_MODEL,
-          src: {
-            // Separate Content objects produce one embedding per record while
-            // sharing the same output-size configuration.
-            inlinedRequests: {
-              contents: group.map((record) => ({
-                parts: [{ text: record.embeddingText }],
-                role: "user",
-              })),
-              config: { outputDimensionality: SEARCH_EMBEDDING_DIMENSIONS },
-            },
+        batchWriter.set(
+          jobReference.collection("batches").doc(index.toString().padStart(6, "0")),
+          {
+            index,
+            recordIds: group.map((record) => record.id),
+            estimatedTokens: estimateEmbeddingTokens(group),
+            state: QUEUED_BATCH_STATE,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
           },
-          config: { displayName: `Docubase search ${jobId} ${index + 1}` },
-        });
-        if (!batch.name) throw new Error("Gemini returned a batch without a name.");
-        submittedBatchNames.push(batch.name);
-        await jobReference.collection("batches").doc(index.toString().padStart(6, "0")).set({
-          index,
-          batchName: batch.name,
-          recordIds: group.map((record) => record.id),
-          state: String(batch.state ?? "JOB_STATE_PENDING"),
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        });
-      }
-      return initial;
-    } catch (error) {
-      if (submittedBatchNames.length > 0) {
-        await Promise.allSettled(
-          submittedBatchNames.map((name) => ai.batches.cancel({ name })),
         );
       }
-      const message = `Search indexing could not start: ${readableProviderError(error)}`;
+      await batchWriter.close();
+      const submission = await submitQueuedSearchBatches(jobReference, ai);
+      const running: SearchIndexState = {
+        ...initial,
+        state: "running",
+        error: submission.quotaPaused ? quotaPauseMessage() : null,
+        updatedAt: new Date().toISOString(),
+      };
+      await Promise.all([
+        jobReference.set(running, { merge: true }),
+        projectReference.set({ searchIndex: running }, { merge: true }),
+      ]);
+      return running;
+    } catch (error) {
+      const message = isQuotaError(error)
+        ? quotaFailureMessage()
+        : `Search indexing could not start: ${readableProviderError(error)}`;
       const failed: SearchIndexState = { ...initial, state: "failed", error: message };
       await Promise.all([
         jobReference.set(failed, { merge: true }),
@@ -357,39 +359,47 @@ export const refreshSearchIndex = onCall(
     if (current.mode === "fast") return current;
     const batchesSnapshot = await jobReference.collection("batches").orderBy("index").get();
     const ai = requireGeminiClient();
-    const batches = await Promise.all(
-      batchesSnapshot.docs.map(async (snapshot) => {
-        const name = String(snapshot.data().batchName ?? "");
-        if (!name) throw new Error("A search batch is missing its provider name.");
-        const batch = await ai.batches.get({ name });
-        await snapshot.ref.set({
-          state: String(batch.state ?? "JOB_STATE_UNSPECIFIED"),
-          updatedAt: new Date().toISOString(),
-        }, { merge: true });
-        return { snapshot, batch };
-      }),
-    );
-    const completedBatches = batches.filter(({ batch }) =>
-      TERMINAL_BATCH_STATES.has(String(batch.state))).length;
-    if (await searchIndexCancelRequested(jobReference)) {
-      return searchIndexState((await projectReference.get()).data()?.searchIndex);
-    }
-    if (completedBatches < batches.length) {
-      const running: SearchIndexState = {
+    const submittedSnapshots = batchesSnapshot.docs.filter((snapshot) => {
+      const batch = snapshot.data();
+      return Boolean(batch.batchName) && batch.state !== IMPORTED_BATCH_STATE;
+    });
+    let batches;
+    try {
+      batches = await Promise.all(
+        submittedSnapshots.map(async (snapshot) => {
+          const name = String(snapshot.data().batchName ?? "");
+          const batch = await ai.batches.get({ name });
+          await snapshot.ref.set({
+            state: String(batch.state ?? "JOB_STATE_UNSPECIFIED"),
+            updatedAt: new Date().toISOString(),
+          }, { merge: true });
+          return { snapshot, batch };
+        }),
+      );
+    } catch (error) {
+      if (!isQuotaError(error)) throw error;
+      const paused: SearchIndexState = {
         ...current,
         state: "running",
-        completedBatches,
+        error: quotaPauseMessage(),
         updatedAt: new Date().toISOString(),
       };
       await Promise.all([
-        jobReference.set(running, { merge: true }),
-        projectReference.set({ searchIndex: running }, { merge: true }),
+        jobReference.set({
+          ...paused,
+          nextSubmitAttemptAt: new Date(Date.now() + QUOTA_RETRY_DELAY_MS).toISOString(),
+        }, { merge: true }),
+        projectReference.set({ searchIndex: paused }, { merge: true }),
       ]);
-      return running;
+      return paused;
+    }
+    if (await searchIndexCancelRequested(jobReference)) {
+      return searchIndexState((await projectReference.get()).data()?.searchIndex);
     }
 
     const failedBatch = batches.find(
-      ({ batch }) => String(batch.state) !== "JOB_STATE_SUCCEEDED",
+      ({ batch }) => TERMINAL_BATCH_STATES.has(String(batch.state)) &&
+        String(batch.state) !== "JOB_STATE_SUCCEEDED",
     );
     if (failedBatch) {
       const message = failedBatch.batch.error?.message ??
@@ -397,7 +407,6 @@ export const refreshSearchIndex = onCall(
       const failed: SearchIndexState = {
         ...current,
         state: "failed",
-        completedBatches,
         error: message,
         updatedAt: new Date().toISOString(),
       };
@@ -409,9 +418,8 @@ export const refreshSearchIndex = onCall(
     }
 
     const searchCollection = projectReference.collection("searchDocuments");
-    const writer = database.bulkWriter();
-    let embeddedRecords = 0;
     for (const { snapshot, batch } of batches) {
+      if (String(batch.state) !== "JOB_STATE_SUCCEEDED") continue;
       const recordIds = arrayStrings(snapshot.data().recordIds);
       const responses = batch.dest?.inlinedEmbedContentResponses ?? [];
       if (recordIds.length !== responses.length) {
@@ -423,6 +431,7 @@ export const refreshSearchIndex = onCall(
       const recordSnapshots = await database.getAll(
         ...recordIds.map((recordId) => jobReference.collection("records").doc(recordId)),
       );
+      const writer = database.bulkWriter();
       for (let index = 0; index < recordIds.length; index += 1) {
         const response = responses[index];
         const values = response.response?.embedding?.values;
@@ -443,26 +452,40 @@ export const refreshSearchIndex = onCall(
           indexJobId: current.jobId,
           updatedAt: new Date().toISOString(),
         });
-        embeddedRecords += 1;
       }
+      await writer.close();
+      await snapshot.ref.set({
+        state: IMPORTED_BATCH_STATE,
+        imported: true,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
     }
-    await writer.close();
 
-    await deleteStaleSearchDocuments(searchCollection, current.jobId);
-
-    const complete: SearchIndexState = {
+    const submission = await submitQueuedSearchBatches(jobReference, ai);
+    const latestBatches = await jobReference.collection("batches").get();
+    const importedBatches = latestBatches.docs.filter(
+      (snapshot) => snapshot.data().state === IMPORTED_BATCH_STATE,
+    );
+    const completedBatches = importedBatches.length;
+    const embeddedRecords = importedBatches.reduce(
+      (total, snapshot) => total + arrayStrings(snapshot.data().recordIds).length,
+      0,
+    );
+    const finished = completedBatches === current.totalBatches;
+    if (finished) await deleteStaleSearchDocuments(searchCollection, current.jobId);
+    const next: SearchIndexState = {
       ...current,
-      state: "complete",
+      state: finished ? "complete" : "running",
       embeddedRecords,
-      completedBatches: batches.length,
-      error: null,
+      completedBatches,
+      error: finished ? null : submission.quotaPaused ? quotaPauseMessage() : null,
       updatedAt: new Date().toISOString(),
     };
     await Promise.all([
-      jobReference.set(complete, { merge: true }),
-      projectReference.set({ searchIndex: complete }, { merge: true }),
+      jobReference.set(next, { merge: true }),
+      projectReference.set({ searchIndex: next }, { merge: true }),
     ]);
-    return complete;
+    return next;
   },
 );
 
@@ -684,6 +707,7 @@ function searchIndexState(value: unknown): SearchIndexState {
     ["pending", "running", "complete", "failed"].includes(rawState)
       ? rawState as SearchIndexState["state"]
       : "not_started";
+  const rawError = typeof source.error === "string" ? source.error : null;
   return {
     jobId: typeof source.jobId === "string" ? source.jobId : null,
     mode: source.mode === "fast" ? "fast" : "batch",
@@ -694,7 +718,9 @@ function searchIndexState(value: unknown): SearchIndexState {
     totalBatches: numeric(source.totalBatches),
     estimatedCostUsd: numeric(source.estimatedCostUsd),
     recordedCostUsd: numeric(source.recordedCostUsd),
-    error: typeof source.error === "string" ? source.error : null,
+    error: rawError && isQuotaError(rawError)
+      ? state === "failed" ? quotaFailureMessage() : quotaPauseMessage()
+      : rawError,
     updatedAt: typeof source.updatedAt === "string" ? source.updatedAt : null,
   };
 }
@@ -734,6 +760,115 @@ function partition<T>(values: T[], size: number): T[][] {
     groups.push(values.slice(index, index + size));
   }
   return groups;
+}
+
+async function submitQueuedSearchBatches(
+  jobReference: FirebaseFirestore.DocumentReference,
+  ai: ReturnType<typeof requireGeminiClient>,
+): Promise<{ quotaPaused: boolean }> {
+  const job = (await jobReference.get()).data() ?? {};
+  const nextAttemptAt = Date.parse(String(job.nextSubmitAttemptAt ?? ""));
+  if (Number.isFinite(nextAttemptAt) && nextAttemptAt > Date.now()) {
+    return { quotaPaused: true };
+  }
+
+  const batchesCollection = jobReference.collection("batches");
+  const snapshot = await batchesCollection.orderBy("index").get();
+  let activeTokens = snapshot.docs.reduce((total, document) => {
+    const batch = document.data();
+    const active = Boolean(batch.batchName) &&
+      batch.state !== IMPORTED_BATCH_STATE &&
+      !TERMINAL_BATCH_STATES.has(String(batch.state));
+    return total + (active ? numeric(batch.estimatedTokens) : 0);
+  }, 0);
+
+  for (const document of snapshot.docs) {
+    const batchData = document.data();
+    if (batchData.state !== QUEUED_BATCH_STATE) continue;
+    const batchTokens = Math.max(1, numeric(batchData.estimatedTokens));
+    if (activeTokens > 0 && activeTokens + batchTokens > BATCH_ENQUEUED_TOKEN_WINDOW) break;
+
+    const claimed = await database.runTransaction(async (transaction) => {
+      const fresh = await transaction.get(document.ref);
+      if (fresh.data()?.state !== QUEUED_BATCH_STATE) return false;
+      transaction.set(document.ref, {
+        state: SUBMITTING_BATCH_STATE,
+        submittingAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      return true;
+    });
+    if (!claimed) continue;
+
+    try {
+      const recordIds = arrayStrings(batchData.recordIds);
+      const recordSnapshots = await database.getAll(
+        ...recordIds.map((recordId) => jobReference.collection("records").doc(recordId)),
+      );
+      const records = recordSnapshots.map((record) => record.data() as SearchDocumentRecord);
+      if (records.some((record) => !record?.embeddingText)) {
+        throw new Error("A queued search record is missing its embedding text.");
+      }
+      const batch = await ai.batches.createEmbeddings({
+        model: SEARCH_EMBEDDING_MODEL,
+        src: {
+          inlinedRequests: {
+            contents: records.map((record) => ({
+              parts: [{ text: record.embeddingText }],
+              role: "user",
+            })),
+            config: { outputDimensionality: SEARCH_EMBEDDING_DIMENSIONS },
+          },
+        },
+        config: {
+          displayName: `Docubase search ${jobReference.id} ${numeric(batchData.index) + 1}`,
+        },
+      });
+      if (!batch.name) throw new Error("Gemini returned a batch without a name.");
+      await document.ref.set({
+        batchName: batch.name,
+        state: String(batch.state ?? "JOB_STATE_PENDING"),
+        submittingAt: null,
+        lastSubmitError: null,
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      activeTokens += batchTokens;
+    } catch (error) {
+      await document.ref.set({
+        state: QUEUED_BATCH_STATE,
+        submittingAt: null,
+        lastSubmitError: readableProviderError(error),
+        updatedAt: new Date().toISOString(),
+      }, { merge: true });
+      if (isQuotaError(error)) {
+        await jobReference.set({
+          nextSubmitAttemptAt: new Date(Date.now() + QUOTA_RETRY_DELAY_MS).toISOString(),
+          updatedAt: new Date().toISOString(),
+        }, { merge: true });
+        return { quotaPaused: true };
+      }
+      throw error;
+    }
+  }
+
+  await jobReference.set({ nextSubmitAttemptAt: null }, { merge: true });
+  return { quotaPaused: false };
+}
+
+function isQuotaError(error: unknown): boolean {
+  const text = readableProviderError(error).toLowerCase();
+  return text.includes("429") ||
+    text.includes("resource_exhausted") ||
+    text.includes("quota") ||
+    text.includes("rate limit");
+}
+
+function quotaPauseMessage(): string {
+  return "Gemini's current embedding quota is full. Indexing is paused and will retry automatically; completed work is preserved.";
+}
+
+function quotaFailureMessage(): string {
+  return "Gemini's embedding quota was full during the previous attempt. Choose Retry search index to restart with the new rolling queue.";
 }
 
 async function deleteStaleSearchDocuments(

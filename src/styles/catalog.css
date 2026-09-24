@@ -285,6 +285,10 @@
   accent-color: var(--accent-blue);
 }
 
+.search-index-progress-note {
+  grid-column: 1 / -1;
+}
+
 .search-index-progress-actions {
   display: flex;
   align-items: center;

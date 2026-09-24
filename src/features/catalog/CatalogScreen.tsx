@@ -654,6 +654,11 @@ export function CatalogScreen({
                 ? semanticSearch.status.embeddedRecords
                 : semanticSearch.status.completedBatches}
             />
+            {semanticSearch.status.error && (
+              <span className="search-index-progress-note">
+                {semanticSearch.status.error}
+              </span>
+            )}
           </div>
         )}
         {semanticSearch.status?.state === "failed" && (
