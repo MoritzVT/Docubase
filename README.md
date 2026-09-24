@@ -1,3 +1,4 @@
+
 # Docubase
 
 > **Work in progress.** Docubase is an experimental macOS app and is not ready
@@ -8,7 +9,19 @@ footage. Original video stays on the editor's drives. The app builds a local
 catalog, transcribes speech on-device with Apple Speech, analyzes selected
 low-resolution frames and transcripts with Gemini, and creates a grounded
 semantic search index.
-
+<table>
+  <tr>
+    <td width="33%">
+      <img src="https://github.com/user-attachments/assets/cb56abde-7fbc-4a52-81bf-26c56552b95b" alt="Docubase screenshot 1" width="100%">
+    </td>
+    <td width="33%">
+      <img src="https://github.com/user-attachments/assets/53294ad8-3250-4f78-9725-dcd0e56461f4" alt="Docubase screenshot 2" width="100%">
+    </td>
+    <td width="33%">
+      <img src="https://github.com/user-attachments/assets/c6745e66-9534-4650-8d6a-af279c3ca9df" alt="Docubase screenshot 3" width="100%">
+    </td>
+  </tr>
+</table>
 ## Current capabilities
 
 - In-place MOV, MP4, M4V, and ProRes cataloging
